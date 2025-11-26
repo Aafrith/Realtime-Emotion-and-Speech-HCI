@@ -1,0 +1,142 @@
+[
+  {
+    "emotion": "happy",
+    "confidence": 0.2395,
+    "timestamp": "2025-11-19T20:51:05.682256",
+    "note": "Auto-logged entry",
+    "id": 0
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.263,
+    "timestamp": "2025-11-19T20:51:12.068329",
+    "note": "Auto-logged entry",
+    "id": 1
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.1805,
+    "timestamp": "2025-11-19T20:51:15.601831",
+    "note": "Auto-logged entry",
+    "id": 2
+  },
+  {
+    "emotion": "happy",
+    "confidence": 0.202,
+    "timestamp": "2025-11-19T20:51:16.116664",
+    "note": "Auto-logged entry",
+    "id": 3
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.2875,
+    "timestamp": "2025-11-19T20:51:17.104406",
+    "note": "Auto-logged entry",
+    "id": 4
+  },
+  {
+    "emotion": "happy",
+    "confidence": 0.2885,
+    "timestamp": "2025-11-19T20:51:18.298538",
+    "note": "Auto-logged entry",
+    "id": 5
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.25749999999999995,
+    "timestamp": "2025-11-19T20:51:24.306206",
+    "note": "Auto-logged entry",
+    "id": 6
+  },
+  {
+    "emotion": "sad",
+    "confidence": 0.22149999999999997,
+    "timestamp": "2025-11-19T20:51:40.960373",
+    "note": "Auto-logged entry",
+    "id": 7
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.25799999999999995,
+    "timestamp": "2025-11-19T20:51:41.518333",
+    "note": "Auto-logged entry",
+    "id": 8
+  },
+  {
+    "emotion": "sad",
+    "confidence": 0.27549999999999997,
+    "timestamp": "2025-11-19T20:51:42.700952",
+    "note": "Auto-logged entry",
+    "id": 9
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.27499999999999997,
+    "timestamp": "2025-11-19T20:51:43.306764",
+    "note": "Auto-logged entry",
+    "id": 10
+  },
+  {
+    "emotion": "sad",
+    "confidence": 0.244,
+    "timestamp": "2025-11-19T20:52:02.300519",
+    "note": "Auto-logged entry",
+    "id": 11
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.27049999999999996,
+    "timestamp": "2025-11-19T20:52:05.248597",
+    "note": "Auto-logged entry",
+    "id": 12
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.2695,
+    "timestamp": "2025-11-19T20:52:05.901476",
+    "note": "Auto-logged entry",
+    "id": 13
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.29200000000000004,
+    "timestamp": "2025-11-19T20:53:08.938328",
+    "note": "Auto-logged entry",
+    "id": 14
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.2915,
+    "timestamp": "2025-11-19T20:53:11.189694",
+    "note": "Auto-logged entry",
+    "id": 15
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.257,
+    "timestamp": "2025-11-19T20:53:14.364516",
+    "note": "Auto-logged entry",
+    "id": 16
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.2555,
+    "timestamp": "2025-11-19T20:53:15.047538",
+    "note": "Auto-logged entry",
+    "id": 17
+  },
+  {
+    "emotion": "angry",
+    "confidence": 0.2465,
+    "timestamp": "2025-11-19T20:53:15.698870",
+    "note": "Auto-logged entry",
+    "id": 18
+  },
+  {
+    "emotion": "neutral",
+    "confidence": 0.24900000000000003,
+    "timestamp": "2025-11-19T20:53:16.147157",
+    "note": "Auto-logged entry",
+    "id": 19
+  }
+]

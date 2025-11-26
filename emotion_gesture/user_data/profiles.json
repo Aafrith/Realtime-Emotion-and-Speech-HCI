@@ -1,0 +1,11 @@
+{
+  "Aafrith": {
+    "created": "2025-11-19T20:50:09.407049",
+    "settings": {
+      "voice_feedback": true,
+      "notifications": true,
+      "wellness_reminders": true,
+      "auto_journal": true
+    }
+  }
+}
