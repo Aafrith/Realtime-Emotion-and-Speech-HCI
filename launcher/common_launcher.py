@@ -8,7 +8,7 @@ from pathlib import Path
 class ModuleLauncherApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Moody - AI Control System")
+        self.root.title("Jarvis - AI Control System")
         self.root.minsize(1100, 750)
         self.root.geometry("1200x800")
         
@@ -105,7 +105,7 @@ class ModuleLauncherApp:
         
         tk.Label(
             text_brand,
-            text="M O O D Y",
+            text="J A R V I S",
             font=("Segoe UI", 48, "bold"),
             bg=self.bg_dark,
             fg=self.text_primary
@@ -142,7 +142,7 @@ class ModuleLauncherApp:
         
         # Description
         desc_text = (
-            "Moody revolutionizes how you interact with your computer through advanced AI technology. "
+            "Jarvis revolutionizes how you interact with your computer through advanced AI technology. "
             "Experience seamless control using facial emotions, hand gestures, and voice commands. "
             "Built with privacy in mind—all processing happens locally on your device."
         )
@@ -500,7 +500,7 @@ class ModuleLauncherApp:
         
         tk.Label(
             footer,
-            text="Moody v1.0  •  Multimodal AI Control System  •  Built for seamless interaction",
+            text="Jarvis v1.0  •  Multimodal AI Control System  •  Built for seamless interaction",
             font=("Segoe UI", 9),
             bg=self.bg_dark,
             fg=self.text_muted

@@ -28,7 +28,7 @@ class Config:
     # System settings
     AUTO_START_LISTENING = False
     ENABLE_WAKE_WORD = True
-    DEFAULT_WAKE_WORD = "hey moody"
+    DEFAULT_WAKE_WORD = "jarvis"
     
     # AI integration settings
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

@@ -119,7 +119,7 @@ class ModernDarkSpeechApp:
                 "voice_feedback": True,
                 "auto_execute": True,
                 "wake_word_enabled": True,
-                "wake_word": "hey moody",
+                "wake_word": "jarvis",
                 "wake_word_sensitivity": 0.6,
                 "command_timeout": 5,
                 # camera preferences
@@ -176,7 +176,7 @@ class ModernDarkSpeechApp:
                          font=("Segoe UI", 24, "bold"),
                          bg=self.colors["bg_secondary"], fg=self.colors["text_primary"])
         subtitle = tk.Label(header,
-                            text="Say 'Hey Moody' to activate • Use the button or voice to control the virtual mouse",
+                            text="Say 'Jarvis' to activate • Use the button or voice to control the virtual mouse",
                             font=("Segoe UI", 12),
                             bg=self.colors["bg_secondary"], fg=self.colors["text_secondary"])
         title.grid(row=0, column=0, sticky="w", padx=20, pady=(16, 0))
@@ -394,7 +394,7 @@ class ModernDarkSpeechApp:
             card,
             text=("How to Use:\n"
                   "1) System listens for wake word automatically.\n"
-                  "2) Say 'Hey Moody' to enable continuous mode.\n"
+                  "2) Say 'Jarvis' to enable continuous mode.\n"
                   "3) Speak commands directly (e.g., 'open Chrome', 'volume up').\n"
                   "4) Use the button or voice commands to start the Virtual Mouse.\n"
                   "   • In the '🖐️ Virtual Mouse' tab: live camera is embedded.\n"
@@ -950,7 +950,7 @@ class ModernDarkSpeechApp:
         try:
             hist = self.db_manager.get_command_history(20)
             if not hist:
-                widget.insert(tk.END, "No recent activity. Say 'Hey Moody' to activate continuous listening.\n")
+                widget.insert(tk.END, "No recent activity. Say 'Jarvis' to activate continuous listening.\n")
                 widget.configure(state="disabled")
                 return
             for item in hist:
