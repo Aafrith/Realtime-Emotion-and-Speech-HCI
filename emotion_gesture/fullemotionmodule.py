@@ -231,6 +231,26 @@ class EmotionRecognitionApp:
         # Hand gesture controller
         self.gesture_controller = HandGestureController()
 
+        # Popup / background mode state
+        self.popup_window = None
+        self.popup_actions_frame = None
+        self.popup_gesture_btn = None
+        self.popup_emotion_label = None
+
+        # NEW: notification icon window
+        self.notification_window = None
+        self.notification_button = None
+
+        # NEW: popup drag + remember position
+        self._popup_drag_offset_x = 0
+        self._popup_drag_offset_y = 0
+        self._popup_last_x = None
+        self._popup_last_y = None
+
+        # Notification icon drag
+        self._notif_drag_offset_x = 0
+        self._notif_drag_offset_y = 0
+
         # Emotion actions (same as before)
         self.emotion_actions = {
             'happy': [
@@ -366,7 +386,11 @@ class EmotionRecognitionApp:
         main_container.grid_columnconfigure(2, weight=2)
 
         # Title
-        title_label = ttk.Label(main_container, text="🎭 Emotion Recognition + Gesture Control Assistant", style='Title.TLabel')
+        title_label = ttk.Label(
+            main_container,
+            text="🎭 Emotion Recognition + Gesture Control Assistant",
+            style='Title.TLabel'
+        )
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 15), sticky='ew')
 
         # LEFT COLUMN - Camera
@@ -375,8 +399,12 @@ class EmotionRecognitionApp:
         left_frame.grid_rowconfigure(1, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
 
-        camera_label = ttk.Label(left_frame, text="📹 Live Camera Feed", style='Dark.TLabel',
-                                 font=('Segoe UI', 12, 'bold'))
+        camera_label = ttk.Label(
+            left_frame,
+            text="📹 Live Camera Feed",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        )
         camera_label.grid(row=0, column=0, pady=(0, 10), sticky='w')
 
         self.camera_container = ttk.Frame(left_frame, style='Dark.TFrame')
@@ -387,28 +415,57 @@ class EmotionRecognitionApp:
         self.video_label = ttk.Label(self.camera_container, style='Dark.TLabel', anchor='center')
         self.video_label.grid(row=0, column=0, sticky='nsew')
 
-        # Control frame with gesture control
+        # Control frame with gesture control + background button
         control_frame = ttk.Frame(left_frame, style='Dark.TFrame')
         control_frame.grid(row=2, column=0, pady=(10, 0), sticky='ew')
         control_frame.grid_columnconfigure(0, weight=1)
         control_frame.grid_columnconfigure(1, weight=1)
         control_frame.grid_columnconfigure(2, weight=1)
+        control_frame.grid_columnconfigure(3, weight=1)
 
-        self.start_btn = ttk.Button(control_frame, text="▶️ Start Detection", style='Dark.TButton',
-                                    command=self.start_detection)
+        self.start_btn = ttk.Button(
+            control_frame,
+            text="▶️ Start Detection",
+            style='Dark.TButton',
+            command=self.start_detection
+        )
         self.start_btn.grid(row=0, column=0, padx=(0, 5), sticky='ew')
 
-        self.stop_btn = ttk.Button(control_frame, text="⏹️ Stop Detection", style='Dark.TButton',
-                                   command=self.stop_detection, state='disabled')
+        self.stop_btn = ttk.Button(
+            control_frame,
+            text="⏹️ Stop Detection",
+            style='Dark.TButton',
+            command=self.stop_detection,
+            state='disabled'
+        )
         self.stop_btn.grid(row=0, column=1, padx=5, sticky='ew')
 
-        self.gesture_btn = ttk.Button(control_frame, text="🖐️ Enable Gestures", style='Gesture.TButton',
-                                     command=self.toggle_gesture_control, state='disabled')
-        self.gesture_btn.grid(row=0, column=2, padx=(5, 0), sticky='ew')
+        self.gesture_btn = ttk.Button(
+            control_frame,
+            text="🖐️ Enable Gestures",
+            style='Gesture.TButton',
+            command=self.toggle_gesture_control,
+            state='disabled'
+        )
+        self.gesture_btn.grid(row=0, column=2, padx=(5, 5), sticky='ew')
+
+        # NEW: Background running button
+        self.background_btn = ttk.Button(
+            control_frame,
+            text="📥 Background Run",
+            style='Dark.TButton',
+            command=self.enable_background_mode,
+            state='disabled'
+        )
+        self.background_btn.grid(row=0, column=3, padx=(5, 0), sticky='ew')
 
         # Gesture status label
-        self.gesture_status_label = ttk.Label(left_frame, text="Gesture Control: OFF", 
-                                             style='Dark.TLabel', font=('Segoe UI', 10, 'italic'))
+        self.gesture_status_label = ttk.Label(
+            left_frame,
+            text="Gesture Control: OFF", 
+            style='Dark.TLabel',
+            font=('Segoe UI', 10, 'italic')
+        )
         self.gesture_status_label.grid(row=3, column=0, pady=(5, 0), sticky='w')
 
         # MIDDLE COLUMN - Emotion Display
@@ -417,23 +474,44 @@ class EmotionRecognitionApp:
         middle_frame.grid_rowconfigure(2, weight=1)
         middle_frame.grid_columnconfigure(0, weight=1)
 
-        emotion_title = ttk.Label(middle_frame, text="🎯 Current Emotion", style='Dark.TLabel',
-                                  font=('Segoe UI', 12, 'bold'))
+        emotion_title = ttk.Label(
+            middle_frame,
+            text="🎯 Current Emotion",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        )
         emotion_title.grid(row=0, column=0, pady=(0, 15), sticky='ew')
 
         emotion_display_frame = ttk.Frame(middle_frame, style='Dark.TFrame')
         emotion_display_frame.grid(row=1, column=0, pady=(0, 20), sticky='ew')
-        self.emotion_icon_label = ttk.Label(emotion_display_frame, text="😐", font=('Segoe UI', 64),
-                                            style='Dark.TLabel', anchor='center')
+        self.emotion_icon_label = ttk.Label(
+            emotion_display_frame,
+            text="😐",
+            font=('Segoe UI', 64),
+            style='Dark.TLabel',
+            anchor='center'
+        )
         self.emotion_icon_label.pack()
-        self.emotion_text_label = ttk.Label(emotion_display_frame, text="Neutral", style='Emotion.TLabel')
+        self.emotion_text_label = ttk.Label(
+            emotion_display_frame,
+            text="Neutral",
+            style='Emotion.TLabel'
+        )
         self.emotion_text_label.pack()
-        self.confidence_label = ttk.Label(emotion_display_frame, text="Confidence: 0%", style='Dark.TLabel',
-                                          font=('Segoe UI', 11))
+        self.confidence_label = ttk.Label(
+            emotion_display_frame,
+            text="Confidence: 0%",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        )
         self.confidence_label.pack(pady=(5, 0))
 
-        history_label = ttk.Label(middle_frame, text="📊 Recent Emotions", style='Dark.TLabel',
-                                  font=('Segoe UI', 11, 'bold'))
+        history_label = ttk.Label(
+            middle_frame,
+            text="📊 Recent Emotions",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11, 'bold')
+        )
         history_label.grid(row=2, column=0, pady=(20, 10), sticky='new')
         self.history_frame = ttk.Frame(middle_frame, style='Dark.TFrame')
         self.history_frame.grid(row=3, column=0, sticky='nsew')
@@ -444,8 +522,12 @@ class EmotionRecognitionApp:
         right_frame.grid_rowconfigure(1, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
 
-        actions_label = ttk.Label(right_frame, text="💡 Suggested Actions", style='Dark.TLabel',
-                                  font=('Segoe UI', 12, 'bold'))
+        actions_label = ttk.Label(
+            right_frame,
+            text="💡 Suggested Actions",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        )
         actions_label.grid(row=0, column=0, pady=(0, 10), sticky='w')
 
         self.actions_canvas = tk.Canvas(right_frame, bg='#2a2a2a', highlightthickness=0)
@@ -453,7 +535,8 @@ class EmotionRecognitionApp:
         self.actions_scrollable_frame = ttk.Frame(self.actions_canvas, style='Dark.TFrame')
 
         self.actions_scrollable_frame.bind(
-            "<Configure>", lambda e: self.actions_canvas.configure(scrollregion=self.actions_canvas.bbox("all"))
+            "<Configure>",
+            lambda e: self.actions_canvas.configure(scrollregion=self.actions_canvas.bbox("all"))
         )
         self.actions_canvas.bind('<Configure>', self._on_canvas_configure)
 
@@ -585,8 +668,15 @@ class EmotionRecognitionApp:
             frame = cv2.flip(frame, 1)
 
             emotion, confidence = self.predict_emotion_from_frame(frame)
-            cv2.putText(frame, f'{emotion}: {confidence:.2f}', (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f'{emotion}: {confidence:.2f}',
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 255, 0),
+                2
+            )
 
             self.root.after(0, self.update_emotion_display, emotion, confidence)
 
@@ -602,7 +692,10 @@ class EmotionRecognitionApp:
                 new_width = container_width
                 new_height = int(container_width / aspect)
 
-            frame_pil = Image.fromarray(frame_rgb).resize((new_width, new_height), Image.Resampling.LANCZOS)
+            frame_pil = Image.fromarray(frame_rgb).resize(
+                (new_width, new_height),
+                Image.Resampling.LANCZOS
+            )
             frame_tk = ImageTk.PhotoImage(frame_pil)
             self.root.after(0, self.update_video_display, frame_tk)
 
@@ -624,28 +717,46 @@ class EmotionRecognitionApp:
 
         if changed:
             self.update_action_suggestions()
+            self.update_background_popup_actions()  # keep popup in sync
+
         self.add_to_history(emotion, confidence)
 
     def add_to_history(self, emotion, confidence):
         for w in self.history_frame.winfo_children():
             w.destroy()
         history_text = f"{self.get_emotion_icon(emotion)} {emotion.capitalize()} - {confidence:.1%}"
-        ttk.Label(self.history_frame, text=history_text, style='Dark.TLabel',
-                  font=('Segoe UI', 10)).pack(anchor='w', pady=3)
+        ttk.Label(
+            self.history_frame,
+            text=history_text,
+            style='Dark.TLabel',
+            font=('Segoe UI', 10)
+        ).pack(anchor='w', pady=3)
 
     def update_action_suggestions(self):
         for w in self.actions_scrollable_frame.winfo_children():
             w.destroy()
         actions = self._actions_for(self.current_emotion)
         for text, func in actions:
-            ttk.Button(self.actions_scrollable_frame, text=text, style='Dark.TButton',
-                       command=func).pack(fill='x', pady=4, padx=6)
+            ttk.Button(
+                self.actions_scrollable_frame,
+                text=text,
+                style='Dark.TButton',
+                command=func
+            ).pack(fill='x', pady=4, padx=6)
         self.actions_scrollable_frame.update_idletasks()
         self.actions_canvas.configure(scrollregion=self.actions_canvas.bbox("all"))
         self.actions_canvas.yview_moveto(0.0)
 
     def get_emotion_icon(self, emotion):
-        icons = {'angry': '😠', 'disgust': '🤢', 'fear': '😨', 'happy': '😊', 'neutral': '😐', 'sad': '😢', 'surprise': '😮'}
+        icons = {
+            'angry': '😠',
+            'disgust': '🤢',
+            'fear': '😨',
+            'happy': '😊',
+            'neutral': '😐',
+            'sad': '😢',
+            'surprise': '😮'
+        }
         return icons.get(emotion, '😐')
 
     def start_detection(self):
@@ -659,6 +770,9 @@ class EmotionRecognitionApp:
         self.start_btn.configure(state='disabled')
         self.stop_btn.configure(state='normal')
         self.gesture_btn.configure(state='normal')
+        self.background_btn.configure(state='normal')
+        if self.popup_gesture_btn is not None and self.popup_gesture_btn.winfo_exists():
+            self.popup_gesture_btn.state(["!disabled"])
         threading.Thread(target=self.detect_emotions, daemon=True).start()
 
     def stop_detection(self):
@@ -666,29 +780,336 @@ class EmotionRecognitionApp:
         self.start_btn.configure(state='normal')
         self.stop_btn.configure(state='disabled')
         self.gesture_btn.configure(state='disabled')
-        
+        self.background_btn.configure(state='disabled')
+
         # Stop gesture control if active
         if self.gesture_controller.running:
             self.gesture_controller.stop()
             self.gesture_btn.configure(text="🖐️ Enable Gestures")
             self.gesture_status_label.configure(text="Gesture Control: OFF")
+            if self.popup_gesture_btn is not None and self.popup_gesture_btn.winfo_exists():
+                self.popup_gesture_btn.configure(text="🖐️ Enable Gestures")
+                self.popup_gesture_btn.state(["disabled"])
 
     def toggle_gesture_control(self):
+        # Require detection / camera
+        if not self.detection_active or self.cap is None:
+            messagebox.showwarning("Gesture Control", "Start detection before enabling hand gestures.")
+            return
+
         if not self.gesture_controller.running:
             self.gesture_controller.start(self.cap)
             self.gesture_btn.configure(text="🖐️ Disable Gestures")
-            self.gesture_status_label.configure(text="Gesture Control: ON (Show 5 fingers to activate mouse)")
-            messagebox.showinfo("Gesture Control", 
-                              "Hand Gesture Control Enabled!\n\n"
-                              "• Show 5 fingers: Toggle mouse control ON/OFF\n"
-                              "• Index finger: Move cursor\n"
-                              "• Thumb + Index: Click (hold for drag)\n"
-                              "• Index + Pinky (rock sign): Right click\n"
-                              "• Index + Middle + Ring: Scroll (move hand up/down)")
+            self.gesture_status_label.configure(
+                text="Gesture Control: ON (Show 5 fingers to activate mouse)"
+            )
+            if self.popup_gesture_btn is not None and self.popup_gesture_btn.winfo_exists():
+                self.popup_gesture_btn.configure(text="🖐️ Disable Gestures")
+                self.popup_gesture_btn.state(["!disabled"])
+
+            messagebox.showinfo(
+                "Gesture Control", 
+                "Hand Gesture Control Enabled!\n\n"
+                "• Show 5 fingers: Toggle mouse control ON/OFF\n"
+                "• Index finger: Move cursor\n"
+                "• Thumb + Index: Click (hold for drag)\n"
+                "• Index + Pinky (rock sign): Right click\n"
+                "• Index + Middle + Ring: Scroll (move hand up/down)"
+            )
         else:
             self.gesture_controller.stop()
             self.gesture_btn.configure(text="🖐️ Enable Gestures")
             self.gesture_status_label.configure(text="Gesture Control: OFF")
+            if self.popup_gesture_btn is not None and self.popup_gesture_btn.winfo_exists():
+                self.popup_gesture_btn.configure(text="🖐️ Enable Gestures")
+
+    # ========== BACKGROUND MODE + POPUP ==========
+    def enable_background_mode(self):
+        if not self.detection_active:
+            messagebox.showwarning("Background Run", "Start detection before enabling background mode.")
+            return
+
+        # Minimize main window
+        try:
+            if platform.system() == "Windows":
+                self.root.state('iconic')
+            else:
+                self.root.iconify()
+        except Exception:
+            self.root.iconify()
+
+        # Show ONLY the small icon on left side
+        self.show_notification_icon()
+        # Popup will be shown when user clicks the icon
+
+    def show_background_popup(self):
+        # If already exists, bring it back
+        if self.popup_window is not None and self.popup_window.winfo_exists():
+            self.popup_window.deiconify()
+            self.popup_window.lift()
+            return
+
+        self.popup_window = tk.Toplevel(self.root)
+        self.popup_window.title("Emotion Suggestions")
+        self.popup_window.overrideredirect(True)  # borderless
+        self.popup_window.attributes("-topmost", True)
+        self.popup_window.configure(bg="#1a1a1a")
+
+        # Size & position (top-right by default, or last drag position)
+        width, height = 320, 420
+        ws = self.root.winfo_screenwidth()
+        hs = self.root.winfo_screenheight()
+
+        if self._popup_last_x is None or self._popup_last_y is None:
+            x = ws - width - 10
+            y = 10
+        else:
+            x = self._popup_last_x
+            y = self._popup_last_y
+
+        self.popup_window.geometry(f"{width}x{height}+{x}+{y}")
+        self.popup_window.protocol("WM_DELETE_WINDOW", self.on_popup_close)
+
+        # Make popup draggable
+        self.popup_window.bind("<ButtonPress-1>", self._start_popup_drag)
+        self.popup_window.bind("<B1-Motion>", self._do_popup_drag)
+
+        popup_frame = ttk.Frame(self.popup_window, style='Dark.TFrame')
+        popup_frame.pack(fill="both", expand=True, padx=8, pady=8)
+
+        title = ttk.Label(
+            popup_frame,
+            text="💡 Emotion Suggestions",
+            style='Dark.TLabel',
+            font=('Segoe UI', 10, 'bold')
+        )
+        title.pack(anchor="w", pady=(0, 4))
+
+        # Emotion label inside popup
+        self.popup_emotion_label = ttk.Label(
+            popup_frame,
+            text=f"{self.get_emotion_icon(self.current_emotion)} {self.current_emotion.capitalize()}",
+            style='Emotion.TLabel'
+        )
+        self.popup_emotion_label.pack(anchor="w", pady=(0, 6))
+
+        # Actions frame
+        self.popup_actions_frame = ttk.Frame(popup_frame, style='Dark.TFrame')
+        self.popup_actions_frame.pack(fill="both", expand=True)
+
+        # Gesture toggle button (same behavior as main)
+        self.popup_gesture_btn = ttk.Button(
+            popup_frame,
+            text="🖐️ Enable Gestures",
+            style='Gesture.TButton',
+            command=self.toggle_gesture_control
+        )
+        if not self.detection_active:
+            self.popup_gesture_btn.state(["disabled"])
+        self.popup_gesture_btn.pack(fill="x", pady=(8, 4))
+
+        # Restore main window button
+        restore_btn = ttk.Button(
+            popup_frame,
+            text="🔙 Restore App",
+            style='Dark.TButton',
+            command=self.restore_from_background
+        )
+        restore_btn.pack(fill="x")
+
+        self.update_background_popup_actions()
+
+    def on_popup_close(self):
+        if self.popup_window is not None and self.popup_window.winfo_exists():
+            try:
+                geo = self.popup_window.geometry()  # "WxH+X+Y"
+                parts = geo.split('+')
+                if len(parts) == 3:
+                    x = int(parts[1])
+                    y = int(parts[2])
+                    self._popup_last_x = x
+                    self._popup_last_y = y
+            except Exception:
+                pass
+
+            # Just hide (withdraw) – icon toggles it
+            self.popup_window.withdraw()
+
+    def restore_from_background(self):
+        # Bring back main window and close popup + icon
+        try:
+            self.root.deiconify()
+            if platform.system() == "Windows":
+                self.root.state('normal')
+        except Exception:
+            pass
+
+        # Close popup (if exists)
+        if self.popup_window is not None and self.popup_window.winfo_exists():
+            self.on_popup_close()
+
+        # Hide notification icon
+        self.hide_notification_icon()
+
+    def update_background_popup_actions(self):
+        # Only update if popup exists and visible object is there
+        if self.popup_window is None or not self.popup_window.winfo_exists() or self.popup_actions_frame is None:
+            return
+
+        # Update emotion label
+        if self.popup_emotion_label is not None:
+            self.popup_emotion_label.configure(
+                text=f"{self.get_emotion_icon(self.current_emotion)} {self.current_emotion.capitalize()}"
+            )
+
+        # Rebuild actions (show top few to keep it compact)
+        for w in self.popup_actions_frame.winfo_children():
+            w.destroy()
+        actions = self._actions_for(self.current_emotion)
+        for text, func in actions[:6]:  # limit to first 6 for the popup
+            ttk.Button(
+                self.popup_actions_frame,
+                text=text,
+                style='Dark.TButton',
+                command=func
+            ).pack(fill="x", pady=2)
+
+    # ========= DRAG HANDLERS FOR POPUP =========
+    def _start_popup_drag(self, event):
+        self._popup_drag_offset_x = event.x
+        self._popup_drag_offset_y = event.y
+
+    def _do_popup_drag(self, event):
+        x = event.x_root - self._popup_drag_offset_x
+        y = event.y_root - self._popup_drag_offset_y
+        self.popup_window.geometry(f"+{x}+{y}")
+        self._popup_last_x = x
+        self._popup_last_y = y
+
+    # ========= DRAG HANDLERS FOR NOTIFICATION ICON =========
+    def _start_notif_drag(self, event):
+        self._notif_drag_offset_x = event.x
+        self._notif_drag_offset_y = event.y
+
+    def _do_notif_drag(self, event):
+        x = event.x_root - self._notif_drag_offset_x
+        y = event.y_root - self._notif_drag_offset_y
+        self.notification_window.geometry(f"+{x}+{y}")
+
+    def _end_notif_drag(self, event):
+        # Optional: could save position if needed
+        pass
+
+    # ========= NOTIFICATION ICON WINDOW =========
+    def show_notification_icon(self):
+        # If exists, just bring to front
+        if self.notification_window is not None and self.notification_window.winfo_exists():
+            self.notification_window.deiconify()
+            self.notification_window.lift()
+            return
+
+        self.notification_window = tk.Toplevel(self.root)
+        self.notification_window.overrideredirect(True)
+        self.notification_window.attributes("-topmost", True)
+        self.notification_window.configure(bg="#1a1a1a")
+
+        # Small square at left side of screen
+        size = 60
+        ws = self.root.winfo_screenwidth()
+        hs = self.root.winfo_screenheight()
+        x = 10
+        y = hs // 2 - size // 2
+        self.notification_window.geometry(f"{size}x{size}+{x}+{y}")
+
+        # Make notification icon draggable
+        self.notification_window.bind("<ButtonPress-1>", self._start_notif_drag)
+        self.notification_window.bind("<B1-Motion>", self._do_notif_drag)
+        self.notification_window.bind("<ButtonRelease-1>", self._end_notif_drag)
+
+        # Create canvas for custom icon
+        canvas = tk.Canvas(
+            self.notification_window,
+            width=size,
+            height=size,
+            bg="#1a1a1a",
+            highlightthickness=0,
+            bd=0
+        )
+        canvas.pack(fill="both", expand=True)
+
+        # Draw colorful circular button with gradient effect
+        center = size // 2
+        radius = 24
+        
+        # Outer glow
+        canvas.create_oval(
+            center - radius - 2, center - radius - 2,
+            center + radius + 2, center + radius + 2,
+            fill="#6a4c93", outline=""
+        )
+        
+        # Main circle with gradient colors
+        canvas.create_oval(
+            center - radius, center - radius,
+            center + radius, center + radius,
+            fill="#8b5cf6", outline="#a78bfa", width=2
+        )
+        
+        # Emoji in center
+        canvas.create_text(
+            center, center,
+            text="🎭",
+            font=("Segoe UI", 22, "bold"),
+            fill="white"
+        )
+        
+        # Red notification badge (top-right)
+        badge_x = size - 12
+        badge_y = 12
+        badge_radius = 10
+        
+        # Badge circle
+        canvas.create_oval(
+            badge_x - badge_radius, badge_y - badge_radius,
+            badge_x + badge_radius, badge_y + badge_radius,
+            fill="#ef4444", outline="#dc2626", width=1
+        )
+        
+        # Badge number
+        canvas.create_text(
+            badge_x, badge_y,
+            text="1",
+            font=("Segoe UI", 10, "bold"),
+            fill="white"
+        )
+        
+        # Bind click to canvas
+        canvas.bind("<Button-1>", lambda e: self.toggle_popup_from_notification())
+        
+        # Store canvas reference
+        self.notification_canvas = canvas
+
+    def hide_notification_icon(self):
+        if self.notification_window is not None and self.notification_window.winfo_exists():
+            self.notification_window.destroy()
+        self.notification_window = None
+        self.notification_canvas = None
+
+    def toggle_popup_from_notification(self):
+        # If popup doesn't exist or was destroyed -> create it
+        if self.popup_window is None or not self.popup_window.winfo_exists():
+            self.show_background_popup()
+            return
+
+        # If popup is hidden -> show it, else hide it
+        try:
+            if not self.popup_window.winfo_viewable():
+                self.popup_window.deiconify()
+                self.popup_window.lift()
+            else:
+                self.on_popup_close()  # withdraw + remember position
+        except Exception:
+            self.show_background_popup()
 
     # ========== ALL ACTION METHODS (UNCHANGED) ==========
     def play_upbeat_music(self):
@@ -701,16 +1122,23 @@ class EmotionRecognitionApp:
     
     def open_creative_apps(self):
         if platform.system() == "Windows":
-            try: subprocess.Popen("mspaint.exe"); messagebox.showinfo("🎨 Creative", "Opening Paint for you!")
-            except: webbrowser.open("https://www.photopea.com"); messagebox.showinfo("🎨 Creative", "Opening online creative tools!")
+            try:
+                subprocess.Popen("mspaint.exe")
+                messagebox.showinfo("🎨 Creative", "Opening Paint for you!")
+            except:
+                webbrowser.open("https://www.photopea.com")
+                messagebox.showinfo("🎨 Creative", "Opening online creative tools!")
         else:
-            webbrowser.open("https://www.photopea.com"); messagebox.showinfo("🎨 Creative", "Opening creative tools for you!")
+            webbrowser.open("https://www.photopea.com")
+            messagebox.showinfo("🎨 Creative", "Opening creative tools for you!")
     
     def open_video_call(self):
-        webbrowser.open("https://meet.google.com"); messagebox.showinfo("💬 Connect", "Share your happiness with friends!")
+        webbrowser.open("https://meet.google.com")
+        messagebox.showinfo("💬 Connect", "Share your happiness with friends!")
     
     def open_happy_journal(self):
-        self.open_journal(); messagebox.showinfo("📝 Journal", "Document your happiness!")
+        self.open_journal()
+        messagebox.showinfo("📝 Journal", "Document your happiness!")
 
     def play_comforting_music(self):
         webbrowser.open("https://www.youtube.com/results?search_query=comforting+peaceful+music")
@@ -725,14 +1153,21 @@ class EmotionRecognitionApp:
         messagebox.showinfo("🌈 Feel Good", "Here's something to brighten your day!")
     
     def open_messaging(self):
-        webbrowser.open("https://web.whatsapp.com"); messagebox.showinfo("💬 Connect", "Reach out to someone!")
+        webbrowser.open("https://web.whatsapp.com")
+        messagebox.showinfo("💬 Connect", "Reach out to someone!")
     
     def play_healing_music(self):
         webbrowser.open("https://www.youtube.com/results?search_query=healing+music+emotional")
         messagebox.showinfo("🎧 Healing", "Let this music help heal your heart...")
     
     def show_support_resources(self):
-        messagebox.showinfo("🆘 Support","You're not alone. Support is available:\n\n• Mental Health Hotline: 1-800-662-4357\n• Crisis Text Line: Text HOME to 741741\n• Suicide Prevention: 988\n")
+        messagebox.showinfo(
+            "🆘 Support",
+            "You're not alone. Support is available:\n\n"
+            "• Mental Health Hotline: 1-800-662-4357\n"
+            "• Crisis Text Line: Text HOME to 741741\n"
+            "• Suicide Prevention: 988\n"
+        )
 
     def play_calming_music(self):
         webbrowser.open("https://www.youtube.com/results?search_query=calming+meditation+music")
@@ -743,33 +1178,64 @@ class EmotionRecognitionApp:
         messagebox.showinfo("🏃 Exercise", "Channel that energy into movement!")
     
     def open_stress_games(self):
-        webbrowser.open("https://www.crazygames.com/t/stress-relief"); messagebox.showinfo("🎮 Games", "Try these stress-relief games!")
+        webbrowser.open("https://www.crazygames.com/t/stress-relief")
+        messagebox.showinfo("🎮 Games", "Try these stress-relief games!")
     
     def open_stress_relief(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=virtual+stress+relief+activities"); messagebox.showinfo("🥊 Relief", "Let it out in a healthy way!")
+        webbrowser.open("https://www.youtube.com/results?search_query=virtual+stress+relief+activities")
+        messagebox.showinfo("🥊 Relief", "Let it out in a healthy way!")
     
     def show_anger_tips(self):
-        tips = ["Take 10 deep breaths slowly","Count backwards from 100","Go for a brisk walk","Write down what's bothering you","Listen to calming music","Do some intense exercise","Squeeze a stress ball","Step away from the situation"]
+        tips = [
+            "Take 10 deep breaths slowly",
+            "Count backwards from 100",
+            "Go for a brisk walk",
+            "Write down what's bothering you",
+            "Listen to calming music",
+            "Do some intense exercise",
+            "Squeeze a stress ball",
+            "Step away from the situation"
+        ]
         messagebox.showinfo("💡 Anger Management", f"Try this:\n\n{np.random.choice(tips)}")
     
     def suggest_productive_activity(self):
-        activities = ["Organize your workspace","Clean a room","Do a workout","Learn a new skill online","Work on a project","Plan tomorrow's tasks"]
+        activities = [
+            "Organize your workspace",
+            "Clean a room",
+            "Do a workout",
+            "Learn a new skill online",
+            "Work on a project",
+            "Plan tomorrow's tasks"
+        ]
         messagebox.showinfo("🎯 Productive", f"Channel your energy:\n\n{np.random.choice(activities)}")
     
     def show_cooldown_tips(self):
-        messagebox.showinfo("🧊 Cool Down","• Splash cold water on your face\n• Take 5 slow, deep breaths\n• Count to 10 slowly\n• Step outside for fresh air\n• Drink cold water")
+        messagebox.showinfo(
+            "🧊 Cool Down",
+            "• Splash cold water on your face\n"
+            "• Take 5 slow, deep breaths\n"
+            "• Count to 10 slowly\n"
+            "• Step outside for fresh air\n"
+            "• Drink cold water"
+        )
     
     def open_mood_tracker(self):
-        self.open_journal(); messagebox.showinfo("📉 Track", "Document what triggered this feeling.")
+        self.open_journal()
+        messagebox.showinfo("📉 Track", "Document what triggered this feeling.")
 
     def show_safety_resources(self):
-        messagebox.showinfo("🔒 Safety", "Resources:\n• Crisis Helpline: 988\n• Emergency: 911\n• Crisis Text: HOME to 741741")
+        messagebox.showinfo(
+            "🔒 Safety",
+            "Resources:\n• Crisis Helpline: 988\n• Emergency: 911\n• Crisis Text: HOME to 741741"
+        )
     
     def open_support_chat(self):
-        webbrowser.open("https://www.7cups.com"); messagebox.showinfo("💬 Support", "Connect with trained listeners.")
+        webbrowser.open("https://www.7cups.com")
+        messagebox.showinfo("💬 Support", "Connect with trained listeners.")
     
     def play_anxiety_relief(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=anxiety+relief+calming+sounds"); messagebox.showinfo("🎧 Calm", "Soothing sounds to ease anxiety...")
+        webbrowser.open("https://www.youtube.com/results?search_query=anxiety+relief+calming+sounds")
+        messagebox.showinfo("🎧 Calm", "Soothing sounds to ease anxiety...")
     
     def show_grounding_techniques(self):
         messagebox.showinfo("🛡️ Grounding", "5-4-3-2-1 Technique:\n5 see • 4 touch • 3 hear • 2 smell • 1 taste")
@@ -779,30 +1245,45 @@ class EmotionRecognitionApp:
 
     def open_video_recorder(self):
         if platform.system() == "Windows":
-            try: subprocess.Popen("start microsoft.windows.camera:", shell=True); messagebox.showinfo("📹 Camera", "Capture this moment!")
-            except: messagebox.showinfo("📹 Camera", "Open your camera app to record this moment!")
+            try:
+                subprocess.Popen("start microsoft.windows.camera:", shell=True)
+                messagebox.showinfo("📹 Camera", "Capture this moment!")
+            except:
+                messagebox.showinfo("📹 Camera", "Open your camera app to record this moment!")
         else:
             messagebox.showinfo("📹 Camera", "Open your camera app to capture this moment!")
     
     def open_exciting_content(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=exciting+amazing+moments"); messagebox.showinfo("⚡ Exciting", "More amazing content for you!")
+        webbrowser.open("https://www.youtube.com/results?search_query=exciting+amazing+moments")
+        messagebox.showinfo("⚡ Exciting", "More amazing content for you!")
     
     def show_reflection_prompt(self):
-        prompts = ["What surprised you most?","How does this make you feel?","Who would you like to share this with?"]
+        prompts = [
+            "What surprised you most?",
+            "How does this make you feel?",
+            "Who would you like to share this with?"
+        ]
         messagebox.showinfo("🌟 Reflect", f"Take a moment:\n\n{np.random.choice(prompts)}")
 
     def suggest_fresh_air(self):
         messagebox.showinfo("🌿 Fresh Air","Step outside for 5 deep breaths and look at something green.")
     
     def show_cleansing_tips(self):
-        tips = ["Take a refreshing shower","Open windows for fresh air","Organize your space","Change into clean clothes"]
+        tips = [
+            "Take a refreshing shower",
+            "Open windows for fresh air",
+            "Organize your space",
+            "Change into clean clothes"
+        ]
         messagebox.showinfo("🧼 Cleansing", f"Try this:\n\n{np.random.choice(tips)}")
     
     def show_comfort_recipes(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=comfort+food+recipes"); messagebox.showinfo("🍵 Comfort", "Find something comforting to make!")
+        webbrowser.open("https://www.youtube.com/results?search_query=comfort+food+recipes")
+        messagebox.showinfo("🍵 Comfort", "Find something comforting to make!")
     
     def open_art_therapy(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=art+therapy+relaxing"); messagebox.showinfo("🎨 Art Therapy", "Express yourself through art!")
+        webbrowser.open("https://www.youtube.com/results?search_query=art+therapy+relaxing")
+        messagebox.showinfo("🎨 Art Therapy", "Express yourself through art!")
     
     def show_cleansing_visualization(self):
         messagebox.showinfo("🌊 Visualization","Imagine a waterfall washing away the negativity.")
@@ -811,102 +1292,170 @@ class EmotionRecognitionApp:
         messagebox.showinfo("💚 Space Reset","Open windows, clear clutter, play uplifting music.")
 
     def discover_music(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=music+discovery+mix"); messagebox.showinfo("🎵 Discover", "Find new music you'll love!")
+        webbrowser.open("https://www.youtube.com/results?search_query=music+discovery+mix")
+        messagebox.showinfo("🎵 Discover", "Find new music you'll love!")
     
     def open_learning_resources(self):
-        webbrowser.open("https://www.coursera.org"); messagebox.showinfo("📚 Learn", "Explore free courses.")
+        webbrowser.open("https://www.coursera.org")
+        messagebox.showinfo("📚 Learn", "Explore free courses.")
     
     def open_productivity(self):
-        webbrowser.open("https://todoist.com"); messagebox.showinfo("🎯 Productivity", "Get organized.")
+        webbrowser.open("https://todoist.com")
+        messagebox.showinfo("🎯 Productivity", "Get organized.")
     
     def explore_interests(self):
-        webbrowser.open("https://www.youtube.com/"); messagebox.showinfo("🌐 Explore", "Discover something new today!")
+        webbrowser.open("https://www.youtube.com/")
+        messagebox.showinfo("🌐 Explore", "Discover something new today!")
     
     def open_planner(self):
         try:
-            if platform.system() == "Windows": subprocess.Popen("notepad.exe")
-            elif platform.system() == "Darwin": subprocess.Popen(["open", "-a", "TextEdit"])
-            else: subprocess.Popen(["gedit"])
+            if platform.system() == "Windows":
+                subprocess.Popen("notepad.exe")
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", "-a", "TextEdit"])
+            else:
+                subprocess.Popen(["gedit"])
             messagebox.showinfo("📊 Planning", "Plan your day ahead!")
-        except: messagebox.showinfo("📊 Planning", "Open your favorite note app to plan your day!")
+        except:
+            messagebox.showinfo("📊 Planning", "Open your favorite note app to plan your day!")
     
     def open_brain_games(self):
-        webbrowser.open("https://www.lumosity.com"); messagebox.showinfo("🧩 Brain Games", "Challenge your mind!")
+        webbrowser.open("https://www.lumosity.com")
+        messagebox.showinfo("🧩 Brain Games", "Challenge your mind!")
     
     def open_reading(self):
-        webbrowser.open("https://medium.com"); messagebox.showinfo("📖 Reading", "Discover interesting articles.")
+        webbrowser.open("https://medium.com")
+        messagebox.showinfo("📖 Reading", "Discover interesting articles.")
     
     def open_goal_setting(self):
-        self.open_journal(); messagebox.showinfo("🌟 Goals", "Write down your goals and aspirations.")
+        self.open_journal()
+        messagebox.showinfo("🌟 Goals", "Write down your goals and aspirations.")
     
     def play_relaxing_music(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=relaxing+calm+music"); messagebox.showinfo("🎵 Relax", "Peaceful music to calm your mind!")
+        webbrowser.open("https://www.youtube.com/results?search_query=relaxing+calm+music")
+        messagebox.showinfo("🎵 Relax", "Peaceful music to calm your mind!")
     
     def play_nature_sounds(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=nature+sounds+rain+forest"); messagebox.showinfo("🌿 Nature", "Immerse yourself in nature sounds!")
+        webbrowser.open("https://www.youtube.com/results?search_query=nature+sounds+rain+forest")
+        messagebox.showinfo("🌿 Nature", "Immerse yourself in nature sounds!")
     
     def open_games(self):
         if platform.system() == "Windows":
-            try: subprocess.Popen("start steam://", shell=True); messagebox.showinfo("🎮 Games", "Opening Steam!")
-            except: webbrowser.open("https://www.crazygames.com"); messagebox.showinfo("🎮 Games", "Time for some fun online games!")
+            try:
+                subprocess.Popen("start steam://", shell=True)
+                messagebox.showinfo("🎮 Games", "Opening Steam!")
+            except:
+                webbrowser.open("https://www.crazygames.com")
+                messagebox.showinfo("🎮 Games", "Time for some fun online games!")
         else:
-            webbrowser.open("https://www.crazygames.com"); messagebox.showinfo("🎮 Games", "Time for some fun!")
+            webbrowser.open("https://www.crazygames.com")
+            messagebox.showinfo("🎮 Games", "Time for some fun!")
     
     def open_youtube(self):
-        webbrowser.open("https://www.youtube.com"); messagebox.showinfo("📺 YouTube", "Explore videos that interest you!")
+        webbrowser.open("https://www.youtube.com")
+        messagebox.showinfo("📺 YouTube", "Explore videos that interest you!")
     
     def open_social_media(self):
-        webbrowser.open("https://www.twitter.com"); messagebox.showinfo("📱 Social", "Connect with your network!")
+        webbrowser.open("https://www.twitter.com")
+        messagebox.showinfo("📱 Social", "Connect with your network!")
     
     def open_camera_app(self):
         if platform.system() == "Windows":
-            try: subprocess.Popen("start microsoft.windows.camera:", shell=True); messagebox.showinfo("📸 Camera", "Camera opened!")
-            except: messagebox.showinfo("📸 Camera", "Open your camera app to capture moments!")
+            try:
+                subprocess.Popen("start microsoft.windows.camera:", shell=True)
+                messagebox.showinfo("📸 Camera", "Camera opened!")
+            except:
+                messagebox.showinfo("📸 Camera", "Open your camera app to capture moments!")
         elif platform.system() == "Darwin":
             messagebox.showinfo("📸 Camera", "Open Photo Booth to capture moments!")
         else:
             messagebox.showinfo("📸 Camera", "Open your camera app to capture moments!")
     
     def show_selfcare_tips(self):
-        tips = ["Take a warm bath","Deep breathing 5 minutes","Go for a peaceful walk","Call a friend","Write in a journal","Gentle stretching","Make a comforting drink","Read a chapter of a book"]
+        tips = [
+            "Take a warm bath",
+            "Deep breathing 5 minutes",
+            "Go for a peaceful walk",
+            "Call a friend",
+            "Write in a journal",
+            "Gentle stretching",
+            "Make a comforting drink",
+            "Read a chapter of a book"
+        ]
         messagebox.showinfo("💝 Self-Care", f"Self-care tip:\n\n{np.random.choice(tips)}")
     
     def show_motivational_quotes(self):
-        quotes = ["Every day is a new beginning!","You are stronger than you think!","This too shall pass.","Believe in yourself!","You've got this!","Progress, not perfection.","You are capable of amazing things!"]
+        quotes = [
+            "Every day is a new beginning!",
+            "You are stronger than you think!",
+            "This too shall pass.",
+            "Believe in yourself!",
+            "You've got this!",
+            "Progress, not perfection.",
+            "You are capable of amazing things!"
+        ]
         messagebox.showinfo("✨ Motivation", np.random.choice(quotes))
     
     def open_meditation(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=guided+meditation+10+minutes"); messagebox.showinfo("🧘 Meditation", "Find inner peace with guided meditation!")
+        webbrowser.open("https://www.youtube.com/results?search_query=guided+meditation+10+minutes")
+        messagebox.showinfo("🧘 Meditation", "Find inner peace with guided meditation!")
     
     def start_breathing_exercise(self):
         messagebox.showinfo("🌬️ Breathing Exercise","IN 4 • HOLD 4 • OUT 6 • HOLD 2\nRepeat 5–10 times.")
     
     def suggest_exercise(self):
-        exercises = ["10-minute brisk walk","20 jumping jacks","5-minute yoga session","Dance to your favorite song","10 push-ups","Full-body stretch"]
+        exercises = [
+            "10-minute brisk walk",
+            "20 jumping jacks",
+            "5-minute yoga session",
+            "Dance to your favorite song",
+            "10 push-ups",
+            "Full-body stretch"
+        ]
         messagebox.showinfo("🏃 Exercise", f"Try this:\n\n{np.random.choice(exercises)}")
     
     def open_journal(self):
         try:
-            if platform.system() == "Windows": subprocess.Popen("notepad.exe")
-            elif platform.system() == "Darwin": subprocess.Popen(["open", "-a", "TextEdit"])
-            else: subprocess.Popen(["gedit"])
+            if platform.system() == "Windows":
+                subprocess.Popen("notepad.exe")
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", "-a", "TextEdit"])
+            else:
+                subprocess.Popen(["gedit"])
             messagebox.showinfo("✍️ Journal", "Express your thoughts in writing!")
         except:
-            webbrowser.open("https://docs.google.com"); messagebox.showinfo("✍️ Journal", "Opening Google Docs for journaling!")
+            webbrowser.open("https://docs.google.com")
+            messagebox.showinfo("✍️ Journal", "Opening Google Docs for journaling!")
     
     def show_emergency_contacts(self):
-        messagebox.showinfo("🆘 Emergency Support","Help is available 24/7:\n• 988 (US)\n• 911 (Emergency)\n• Text HOME to 741741")
+        messagebox.showinfo(
+            "🆘 Emergency Support",
+            "Help is available 24/7:\n• 988 (US)\n• 911 (Emergency)\n• Text HOME to 741741"
+        )
     
     def show_affirmations(self):
-        affirmations = ["I am brave and capable.","I focus on what I can control.","I am safe right now.","I am resilient.","I deserve peace and happiness."]
+        affirmations = [
+            "I am brave and capable.",
+            "I focus on what I can control.",
+            "I am safe right now.",
+            "I am resilient.",
+            "I deserve peace and happiness."
+        ]
         messagebox.showinfo("💫 Affirmation", np.random.choice(affirmations))
     
     def show_celebration_ideas(self):
-        ideas = ["Share with friends","Treat yourself","Take a photo","Happy dance","Journal the moment"]
+        ideas = [
+            "Share with friends",
+            "Treat yourself",
+            "Take a photo",
+            "Happy dance",
+            "Journal the moment"
+        ]
         messagebox.showinfo("🎉 Celebrate", f"Try this:\n\n{np.random.choice(ideas)}")
     
     def show_nature_content(self):
-        webbrowser.open("https://www.youtube.com/results?search_query=beautiful+nature+scenery+4k+relaxing"); messagebox.showinfo("🌸 Nature", "Immerse yourself in beautiful nature!")
+        webbrowser.open("https://www.youtube.com/results?search_query=beautiful+nature+scenery+4k+relaxing")
+        messagebox.showinfo("🌸 Nature", "Immerse yourself in beautiful nature!")
 
     def __del__(self):
         if hasattr(self, 'cap') and self.cap is not None:
@@ -915,6 +1464,18 @@ class EmotionRecognitionApp:
             self.face_mesh.close()
         if hasattr(self, 'gesture_controller'):
             self.gesture_controller.stop()
+        if hasattr(self, 'popup_window') and self.popup_window is not None:
+            try:
+                if self.popup_window.winfo_exists():
+                    self.popup_window.destroy()
+            except:
+                pass
+        if hasattr(self, 'notification_window') and self.notification_window is not None:
+            try:
+                if self.notification_window.winfo_exists():
+                    self.notification_window.destroy()
+            except:
+                pass
 
 
 def main():
@@ -924,6 +1485,18 @@ def main():
     def on_closing():
         app.detection_active = False
         app.gesture_controller.stop()
+        if getattr(app, "popup_window", None) is not None:
+            try:
+                if app.popup_window.winfo_exists():
+                    app.popup_window.destroy()
+            except:
+                pass
+        if getattr(app, "notification_window", None) is not None:
+            try:
+                if app.notification_window.winfo_exists():
+                    app.notification_window.destroy()
+            except:
+                pass
         if hasattr(app, 'cap') and app.cap is not None:
             app.cap.release()
         if hasattr(app, 'face_mesh') and app.face_mesh is not None:
