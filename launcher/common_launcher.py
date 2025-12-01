@@ -524,6 +524,9 @@ class ModuleLauncherApp:
             )
             self.procs["emotion"] = proc
             self._set_status("Emotion & Gesture Control active", "#3fb950")
+            
+            # Close the launcher after successful module launch
+            self.root.after(500, self.root.destroy)
         except Exception as e:
             self._set_status("Failed to launch Emotion module", "#f85149")
             messagebox.showerror("Launch Error", f"Error: {str(e)}")
@@ -545,6 +548,9 @@ class ModuleLauncherApp:
             )
             self.procs["speech"] = proc
             self._set_status("Voice Command Control active", "#3fb950")
+            
+            # Close the launcher after successful module launch
+            self.root.after(500, self.root.destroy)
         except Exception as e:
             self._set_status("Failed to launch Speech module", "#f85149")
             messagebox.showerror("Launch Error", f"Error: {str(e)}")

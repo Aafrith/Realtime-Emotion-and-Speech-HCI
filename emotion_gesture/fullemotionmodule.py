@@ -17,6 +17,7 @@ import csv
 import hashlib
 from datetime import datetime, timedelta
 from collections import Counter
+from pathlib import Path
 warnings.filterwarnings('ignore')
 
 # --- Model / features (your pipeline) ---
@@ -466,7 +467,15 @@ class EmotionRecognitionApp:
             style='Dark.TButton',
             command=self.logout_user
         )
-        self.logout_btn.pack(side='left')
+        self.logout_btn.pack(side='left', padx=(0, 5))
+        
+        self.dashboard_btn = ttk.Button(
+            user_controls_frame,
+            text="🏠 Back to Dashboard",
+            style='Gesture.TButton',
+            command=self.back_to_dashboard
+        )
+        self.dashboard_btn.pack(side='left')
         
         self.current_user_label = ttk.Label(
             title_frame,
@@ -1237,9 +1246,6 @@ class EmotionRecognitionApp:
     # ========== PROFILE MANAGEMENT ==========
     def force_profile_selection(self):
         """Force user to select profile on startup"""
-        # Clear all existing profiles on first run
-        self._clear_all_profiles()
-        
         if self.current_user is None:
             self.show_profile_selector()
             if self.current_user is None:
@@ -1250,46 +1256,33 @@ class EmotionRecognitionApp:
                 )
                 self.root.after(100, self.force_profile_selection)
     
-    def _clear_all_profiles(self):
-        """Clear all existing profiles (one-time cleanup)"""
-        profiles_file = os.path.join(self.profiles_dir, "profiles.json")
-        if os.path.exists(profiles_file):
-            # Backup old profiles
-            import shutil
-            backup_file = os.path.join(self.profiles_dir, "profiles_backup_old.json")
-            try:
-                shutil.copy(profiles_file, backup_file)
-            except:
-                pass
-            
-            # Clear profiles
-            with open(profiles_file, 'w') as f:
-                json.dump({'profiles': {}}, f, indent=2)
-    
     def show_profile_selector(self):
         """Show profile selection dialog with login/register"""
         selector = tk.Toplevel(self.root)
         selector.title("Login / Register")
         selector.configure(bg='#1a1a1a')
-        selector.geometry("450x550")
+        selector.geometry("450x600")
         selector.transient(self.root)
         selector.grab_set()
         
         # Center the window
         selector.update_idletasks()
         x = (selector.winfo_screenwidth() // 2) - (450 // 2)
-        y = (selector.winfo_screenheight() // 2) - (550 // 2)
-        selector.geometry(f"450x550+{x}+{y}")
+        y = (selector.winfo_screenheight() // 2) - (600 // 2)
+        selector.geometry(f"450x600+{x}+{y}")
         
-        # Prevent closing without selection
+        # Track if user is coming from force selection (no user yet)
+        is_forced_login = self.current_user is None
+        
+        # Prevent closing without selection only if forced
         def on_close():
-            if self.current_user is None:
+            if is_forced_login and self.current_user is None:
                 response = messagebox.askyesno(
                     "Exit",
-                    "You must login to use the application. Exit program?"
+                    "You must login to use the application. Exit to dashboard?"
                 )
                 if response:
-                    self.root.destroy()
+                    self.back_to_dashboard()
             else:
                 selector.destroy()
         
@@ -1438,10 +1431,25 @@ class EmotionRecognitionApp:
         # Bind Enter key to register
         register_confirm.bind('<Return>', lambda e: do_register())
         
-        # Guest option (optional - without password)
+        # Back to Dashboard button
         ttk.Label(
             frame,
             text="Or",
+            style='Dark.TLabel',
+            font=('Segoe UI', 10, 'italic')
+        ).pack(pady=5)
+        
+        ttk.Button(
+            frame,
+            text="🏠 Back to Dashboard",
+            style='Gesture.TButton',
+            command=lambda: self._back_to_dashboard_from_login(selector)
+        ).pack(fill='x', pady=5)
+        
+        # Guest option (optional - without password)
+        ttk.Label(
+            frame,
+            text="Quick Access",
             style='Dark.TLabel',
             font=('Segoe UI', 10, 'italic')
         ).pack(pady=5)
@@ -1515,6 +1523,16 @@ class EmotionRecognitionApp:
             print(f"Error creating account: {e}")
             return False
     
+    def _back_to_dashboard_from_login(self, login_window):
+        """Handle back to dashboard from login window"""
+        response = messagebox.askyesno(
+            "Back to Dashboard",
+            "Return to the main dashboard?\n\nYou need to login to use this module."
+        )
+        if response:
+            login_window.destroy()
+            self.back_to_dashboard(force_close=True)
+    
     def _load_user_profile(self, username):
         """Load user profile and settings"""
         self.current_user = username
@@ -1585,6 +1603,41 @@ class EmotionRecognitionApp:
         
         # Show profile selector - must login again
         self.show_profile_selector()
+    
+    def back_to_dashboard(self, force_close=False):
+        """Return to the main dashboard launcher"""
+        if not force_close and self.detection_active:
+            response = messagebox.askyesno(
+                "Back to Dashboard",
+                "Detection is active. Stop detection and return to dashboard?"
+            )
+            if response:
+                self.stop_detection()
+            else:
+                return
+        
+        # Save current data if user is logged in
+        if self.current_user and not force_close:
+            self._save_emotion_log()
+            self._save_user_settings()
+        
+        # Launch dashboard
+        try:
+            import sys
+            base_dir = Path(__file__).resolve().parent.parent
+            launcher_script = base_dir / "launcher" / "common_launcher.py"
+            venv_python = base_dir / ".venv" / "Scripts" / "python.exe"
+            python_exec = str(venv_python if venv_python.exists() else Path(sys.executable))
+            
+            subprocess.Popen(
+                [python_exec, str(launcher_script)],
+                cwd=str(launcher_script.parent)
+            )
+            
+            # Close this window
+            self.root.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch dashboard: {e}")
     
     def _load_emotion_log(self):
         """Load emotion log for current user"""

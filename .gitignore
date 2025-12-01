@@ -1,3 +1,4 @@
 .venv/
 *__pycache__
 /launcher/logs/
+*/user_data/

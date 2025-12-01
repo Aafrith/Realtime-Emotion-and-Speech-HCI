@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 import os
 import socket
+from pathlib import Path
 
 # Hand-gesture stack
 import cv2
@@ -169,7 +170,8 @@ class ModernDarkSpeechApp:
         header.grid(row=0, column=0, sticky="nsew")
         header.grid_propagate(False)
         header.grid_columnconfigure(0, weight=1)
-        header.grid_columnconfigure(1, weight=1)
+        header.grid_columnconfigure(1, weight=0)
+        header.grid_columnconfigure(2, weight=0)
 
         title = tk.Label(header,
                          text="🎤 AI Speech Assistant + 🖐️ Hand Gesture Mouse",
@@ -182,8 +184,25 @@ class ModernDarkSpeechApp:
         title.grid(row=0, column=0, sticky="w", padx=20, pady=(16, 0))
         subtitle.grid(row=1, column=0, sticky="w", padx=20, pady=(2, 12))
 
+        # Back to Dashboard button
+        dashboard_btn = tk.Button(
+            header,
+            text="🏠 Back to Dashboard",
+            font=("Segoe UI", 11, "bold"),
+            bg=self.colors["accent_secondary"],
+            fg="white",
+            activebackground=self.colors["accent_primary"],
+            relief=tk.RAISED,
+            bd=2,
+            cursor="hand2",
+            command=self.back_to_dashboard,
+            padx=20,
+            pady=8
+        )
+        dashboard_btn.grid(row=0, column=1, sticky="ne", padx=(0, 20), pady=(12, 0))
+        
         status_card = tk.Frame(header, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        status_card.grid(row=0, column=1, rowspan=2, sticky="nse", padx=20, pady=12)
+        status_card.grid(row=0, column=2, rowspan=2, sticky="nse", padx=20, pady=12)
         tk.Label(status_card, text="System Status", font=("Segoe UI", 12, "bold"),
                  bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).pack(padx=14, pady=(12, 6))
         self.wake_status_label = tk.Label(status_card, textvariable=self.wake_word_status_var,
@@ -1000,6 +1019,41 @@ class ModernDarkSpeechApp:
                 self.safe_log_message("🗑️ Logs cleared")
             except tk.TclError:
                 pass
+
+    def back_to_dashboard(self):
+        """Return to the main dashboard launcher"""
+        response = messagebox.askyesno(
+            "Back to Dashboard",
+            "Return to the main dashboard?\n\nThis will close the voice control module."
+        )
+        
+        if response:
+            # Stop all services
+            self.wake_word_active = False
+            self.continuous_listening = False
+            if hasattr(self, "gesture_controller") and self.gesture_controller.is_running():
+                self.gesture_controller.stop()
+            if hasattr(self, "speech_engine"):
+                self.speech_engine.cleanup()
+            if hasattr(self, 'db'):
+                self.save_settings()
+            
+            # Launch dashboard
+            try:
+                base_dir = Path(__file__).resolve().parent.parent
+                launcher_script = base_dir / "launcher" / "common_launcher.py"
+                venv_python = base_dir / ".venv" / "Scripts" / "python.exe"
+                python_exec = str(venv_python if venv_python.exists() else Path(sys.executable))
+                
+                subprocess.Popen(
+                    [python_exec, str(launcher_script)],
+                    cwd=str(launcher_script.parent)
+                )
+                
+                # Close this window
+                self.root.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to launch dashboard: {e}")
 
     def on_closing(self):
         try:
