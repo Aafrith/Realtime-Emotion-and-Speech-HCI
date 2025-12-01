@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
@@ -12,6 +12,11 @@ import platform
 import warnings
 import pyautogui
 from queue import Queue
+import json
+import csv
+import hashlib
+from datetime import datetime, timedelta
+from collections import Counter
 warnings.filterwarnings('ignore')
 
 # --- Model / features (your pipeline) ---
@@ -251,6 +256,23 @@ class EmotionRecognitionApp:
         self._notif_drag_offset_x = 0
         self._notif_drag_offset_y = 0
 
+        # Multi-user profiles
+        self.profiles_dir = os.path.join(os.path.dirname(__file__), "user_data")
+        os.makedirs(self.profiles_dir, exist_ok=True)
+        self.current_user = None
+        self.user_settings = {}
+        self.emotion_log = []
+        
+        # Analytics tracking
+        self.session_start_time = None
+        self.emotion_durations = {emotion: 0.0 for emotion in self.emotion_labels}
+        self.last_emotion_time = None
+        self.emotion_streak_start = None
+        self.emotion_streak_emotion = None
+        self.daily_happy_spikes = 0
+        self.calm_streak_start = None
+        self.last_analytics_check = None
+
         # Emotion actions (same as before)
         self.emotion_actions = {
             'happy': [
@@ -351,6 +373,9 @@ class EmotionRecognitionApp:
         self.setup_model()
         self.setup_camera()
         self.setup_responsive_layout()
+        
+        # Analytics tab reference
+        self.analytics_tab = None
 
         # Start maximized
         try:
@@ -360,6 +385,9 @@ class EmotionRecognitionApp:
                 self.root.attributes('-zoomed', True)
         except Exception:
             pass
+        
+        # Force profile selection on startup
+        self.root.after(500, self.force_profile_selection)
 
     def setup_ui(self):
         self.root.title("Emotion Recognition + Gesture Control Assistant")
@@ -381,20 +409,76 @@ class EmotionRecognitionApp:
         main_container = ttk.Frame(self.root, style='Dark.TFrame')
         main_container.pack(fill='both', expand=True, padx=15, pady=15)
         main_container.grid_rowconfigure(1, weight=1)
-        main_container.grid_columnconfigure(0, weight=2)
-        main_container.grid_columnconfigure(1, weight=1)
-        main_container.grid_columnconfigure(2, weight=2)
+        main_container.grid_columnconfigure(0, weight=1)
+        
+        # Store reference to main container
+        self.main_container = main_container
+        
+        # Create notebook for multiple views
+        self.main_notebook = ttk.Notebook(main_container)
+        self.main_notebook.grid(row=1, column=0, sticky='nsew')
+        
+        # Main app frame (existing UI)
+        self.main_app_frame = ttk.Frame(self.main_notebook, style='Dark.TFrame')
+        self.main_notebook.add(self.main_app_frame, text="🎭 Emotion Recognition")
+        
+        # Grid configuration for main app frame
+        self.main_app_frame.grid_rowconfigure(1, weight=1)
+        self.main_app_frame.grid_columnconfigure(0, weight=2)
+        self.main_app_frame.grid_columnconfigure(1, weight=1)
+        self.main_app_frame.grid_columnconfigure(2, weight=2)
 
-        # Title
+        # Title and user info
+        title_frame = ttk.Frame(self.main_app_frame, style='Dark.TFrame')
+        title_frame.grid(row=0, column=0, columnspan=3, pady=(0, 15), sticky='ew')
+        title_frame.grid_columnconfigure(1, weight=1)
+        
         title_label = ttk.Label(
-            main_container,
+            title_frame,
             text="🎭 Emotion Recognition + Gesture Control Assistant",
             style='Title.TLabel'
         )
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 15), sticky='ew')
+        title_label.grid(row=0, column=0, sticky='w')
+        
+        # Profile and analytics buttons
+        user_controls_frame = ttk.Frame(title_frame, style='Dark.TFrame')
+        user_controls_frame.grid(row=0, column=2, sticky='e')
+        
+        self.profile_btn = ttk.Button(
+            user_controls_frame,
+            text="👤 Switch User",
+            style='Dark.TButton',
+            command=self.show_profile_selector
+        )
+        self.profile_btn.pack(side='left', padx=(0, 5))
+        
+        self.analytics_btn = ttk.Button(
+            user_controls_frame,
+            text="📈 Analytics",
+            style='Dark.TButton',
+            command=self.show_analytics_panel
+        )
+        self.analytics_btn.pack(side='left', padx=(0, 5))
+        
+        self.logout_btn = ttk.Button(
+            user_controls_frame,
+            text="🚪 Logout",
+            style='Dark.TButton',
+            command=self.logout_user
+        )
+        self.logout_btn.pack(side='left')
+        
+        self.current_user_label = ttk.Label(
+            title_frame,
+            text="Not logged in",
+            style='Dark.TLabel',
+            font=('Segoe UI', 9, 'italic'),
+            foreground='#ff6666'
+        )
+        self.current_user_label.grid(row=1, column=0, columnspan=3, sticky='w', pady=(5, 0))
 
         # LEFT COLUMN - Camera
-        left_frame = ttk.Frame(main_container, style='Dark.TFrame')
+        left_frame = ttk.Frame(self.main_app_frame, style='Dark.TFrame')
         left_frame.grid(row=1, column=0, sticky='nsew', padx=(0, 10))
         left_frame.grid_rowconfigure(1, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
@@ -469,7 +553,7 @@ class EmotionRecognitionApp:
         self.gesture_status_label.grid(row=3, column=0, pady=(5, 0), sticky='w')
 
         # MIDDLE COLUMN - Emotion Display
-        middle_frame = ttk.Frame(main_container, style='Dark.TFrame')
+        middle_frame = ttk.Frame(self.main_app_frame, style='Dark.TFrame')
         middle_frame.grid(row=1, column=1, sticky='nsew', padx=10)
         middle_frame.grid_rowconfigure(2, weight=1)
         middle_frame.grid_columnconfigure(0, weight=1)
@@ -517,7 +601,7 @@ class EmotionRecognitionApp:
         self.history_frame.grid(row=3, column=0, sticky='nsew')
 
         # RIGHT COLUMN - Actions
-        right_frame = ttk.Frame(main_container, style='Dark.TFrame')
+        right_frame = ttk.Frame(self.main_app_frame, style='Dark.TFrame')
         right_frame.grid(row=1, column=2, sticky='nsew', padx=(10, 0))
         right_frame.grid_rowconfigure(1, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
@@ -708,6 +792,18 @@ class EmotionRecognitionApp:
     def update_emotion_display(self, emotion, confidence):
         emotion = self._canonical_label(emotion)
         changed = (emotion != self.current_emotion)
+        
+        # Track emotion duration
+        current_time = time.time()
+        if self.last_emotion_time is not None and self.current_emotion:
+            duration = current_time - self.last_emotion_time
+            self.emotion_durations[self.current_emotion] += duration
+        self.last_emotion_time = current_time
+        
+        # Track emotion changes and streaks
+        if changed:
+            self._track_emotion_change(emotion, confidence)
+        
         self.current_emotion = emotion
         self.emotion_confidence = confidence
 
@@ -719,6 +815,12 @@ class EmotionRecognitionApp:
             self.update_action_suggestions()
             self.update_background_popup_actions()  # keep popup in sync
 
+        # Log emotion
+        self._log_emotion(emotion, confidence)
+        
+        # Check for achievements
+        self._check_achievements()
+        
         self.add_to_history(emotion, confidence)
 
     def add_to_history(self, emotion, confidence):
@@ -766,7 +868,24 @@ class EmotionRecognitionApp:
         if self.cap is None:
             messagebox.showerror("Error", "Camera not available")
             return
+        
+        # Require login
+        if self.current_user is None:
+            messagebox.showwarning(
+                "Login Required",
+                "Please login or register to start emotion detection."
+            )
+            self.show_profile_selector()
+            if self.current_user is None:  # User cancelled
+                return
+        
         self.detection_active = True
+        self.session_start_time = datetime.now()
+        self.last_emotion_time = time.time()
+        self.last_analytics_check = time.time()
+        self.calm_streak_start = time.time()
+        self.daily_happy_spikes = 0
+        
         self.start_btn.configure(state='disabled')
         self.stop_btn.configure(state='normal')
         self.gesture_btn.configure(state='normal')
@@ -781,6 +900,10 @@ class EmotionRecognitionApp:
         self.stop_btn.configure(state='disabled')
         self.gesture_btn.configure(state='disabled')
         self.background_btn.configure(state='disabled')
+        
+        # Save emotion log
+        if self.current_user:
+            self._save_emotion_log()
 
         # Stop gesture control if active
         if self.gesture_controller.running:
@@ -1110,6 +1233,840 @@ class EmotionRecognitionApp:
                 self.on_popup_close()  # withdraw + remember position
         except Exception:
             self.show_background_popup()
+
+    # ========== PROFILE MANAGEMENT ==========
+    def force_profile_selection(self):
+        """Force user to select profile on startup"""
+        # Clear all existing profiles on first run
+        self._clear_all_profiles()
+        
+        if self.current_user is None:
+            self.show_profile_selector()
+            if self.current_user is None:
+                # User closed without selecting, show again
+                messagebox.showwarning(
+                    "Profile Required",
+                    "Please login or register to continue using the application."
+                )
+                self.root.after(100, self.force_profile_selection)
+    
+    def _clear_all_profiles(self):
+        """Clear all existing profiles (one-time cleanup)"""
+        profiles_file = os.path.join(self.profiles_dir, "profiles.json")
+        if os.path.exists(profiles_file):
+            # Backup old profiles
+            import shutil
+            backup_file = os.path.join(self.profiles_dir, "profiles_backup_old.json")
+            try:
+                shutil.copy(profiles_file, backup_file)
+            except:
+                pass
+            
+            # Clear profiles
+            with open(profiles_file, 'w') as f:
+                json.dump({'profiles': {}}, f, indent=2)
+    
+    def show_profile_selector(self):
+        """Show profile selection dialog with login/register"""
+        selector = tk.Toplevel(self.root)
+        selector.title("Login / Register")
+        selector.configure(bg='#1a1a1a')
+        selector.geometry("450x550")
+        selector.transient(self.root)
+        selector.grab_set()
+        
+        # Center the window
+        selector.update_idletasks()
+        x = (selector.winfo_screenwidth() // 2) - (450 // 2)
+        y = (selector.winfo_screenheight() // 2) - (550 // 2)
+        selector.geometry(f"450x550+{x}+{y}")
+        
+        # Prevent closing without selection
+        def on_close():
+            if self.current_user is None:
+                response = messagebox.askyesno(
+                    "Exit",
+                    "You must login to use the application. Exit program?"
+                )
+                if response:
+                    self.root.destroy()
+            else:
+                selector.destroy()
+        
+        selector.protocol("WM_DELETE_WINDOW", on_close)
+        
+        frame = ttk.Frame(selector, style='Dark.TFrame', padding=20)
+        frame.pack(fill='both', expand=True)
+        
+        ttk.Label(
+            frame,
+            text="🔒 Secure Login",
+            style='Title.TLabel',
+            font=('Segoe UI', 18, 'bold')
+        ).pack(pady=(0, 20))
+        
+        # Create notebook for Login/Register tabs
+        auth_notebook = ttk.Notebook(frame)
+        auth_notebook.pack(fill='both', expand=True, pady=(0, 15))
+        
+        # LOGIN TAB
+        login_frame = ttk.Frame(auth_notebook, style='Dark.TFrame', padding=20)
+        auth_notebook.add(login_frame, text="🔑 Login")
+        
+        ttk.Label(
+            login_frame,
+            text="Username:",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        ).pack(anchor='w', pady=(10, 5))
+        
+        login_username = ttk.Entry(login_frame, font=('Segoe UI', 11), width=30)
+        login_username.pack(fill='x', pady=(0, 15))
+        
+        ttk.Label(
+            login_frame,
+            text="Password:",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        ).pack(anchor='w', pady=(0, 5))
+        
+        login_password = ttk.Entry(login_frame, font=('Segoe UI', 11), width=30, show='*')
+        login_password.pack(fill='x', pady=(0, 20))
+        
+        def do_login():
+            username = login_username.get().strip()
+            password = login_password.get()
+            
+            if not username or not password:
+                messagebox.showerror("Error", "Please enter both username and password!")
+                return
+            
+            if self._verify_login(username, password):
+                self._load_user_profile(username)
+                selector.destroy()
+            else:
+                messagebox.showerror("Login Failed", "Invalid username or password!")
+                login_password.delete(0, 'end')
+        
+        ttk.Button(
+            login_frame,
+            text="✓ Login",
+            style='Gesture.TButton',
+            command=do_login
+        ).pack(fill='x', pady=5)
+        
+        # Bind Enter key to login
+        login_password.bind('<Return>', lambda e: do_login())
+        
+        # REGISTER TAB
+        register_frame = ttk.Frame(auth_notebook, style='Dark.TFrame', padding=20)
+        auth_notebook.add(register_frame, text="➕ Register")
+        
+        ttk.Label(
+            register_frame,
+            text="Username:",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        ).pack(anchor='w', pady=(10, 5))
+        
+        register_username = ttk.Entry(register_frame, font=('Segoe UI', 11), width=30)
+        register_username.pack(fill='x', pady=(0, 15))
+        
+        ttk.Label(
+            register_frame,
+            text="Password:",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        ).pack(anchor='w', pady=(0, 5))
+        
+        register_password = ttk.Entry(register_frame, font=('Segoe UI', 11), width=30, show='*')
+        register_password.pack(fill='x', pady=(0, 15))
+        
+        ttk.Label(
+            register_frame,
+            text="Confirm Password:",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        ).pack(anchor='w', pady=(0, 5))
+        
+        register_confirm = ttk.Entry(register_frame, font=('Segoe UI', 11), width=30, show='*')
+        register_confirm.pack(fill='x', pady=(0, 20))
+        
+        def do_register():
+            username = register_username.get().strip()
+            password = register_password.get()
+            confirm = register_confirm.get()
+            
+            if not username or not password or not confirm:
+                messagebox.showerror("Error", "Please fill in all fields!")
+                return
+            
+            if len(username) < 3:
+                messagebox.showerror("Error", "Username must be at least 3 characters!")
+                return
+            
+            if len(password) < 6:
+                messagebox.showerror("Error", "Password must be at least 6 characters!")
+                return
+            
+            if password != confirm:
+                messagebox.showerror("Error", "Passwords do not match!")
+                return
+            
+            if self._username_exists(username):
+                messagebox.showerror("Error", f"Username '{username}' already exists!")
+                return
+            
+            # Create new account
+            if self._create_account(username, password):
+                messagebox.showinfo("Success", f"Account created successfully!\nYou can now login.")
+                # Switch to login tab
+                auth_notebook.select(login_frame)
+                login_username.delete(0, 'end')
+                login_username.insert(0, username)
+                login_password.focus()
+            else:
+                messagebox.showerror("Error", "Failed to create account!")
+        
+        ttk.Button(
+            register_frame,
+            text="✓ Register",
+            style='Gesture.TButton',
+            command=do_register
+        ).pack(fill='x', pady=5)
+        
+        # Bind Enter key to register
+        register_confirm.bind('<Return>', lambda e: do_register())
+        
+        # Guest option (optional - without password)
+        ttk.Label(
+            frame,
+            text="Or",
+            style='Dark.TLabel',
+            font=('Segoe UI', 10, 'italic')
+        ).pack(pady=5)
+        
+        def continue_as_guest():
+            response = messagebox.askyesno(
+                "Guest Mode",
+                "Continue as Guest?\n\nNote: Guest data is not saved permanently."
+            )
+            if response:
+                self._load_user_profile("Guest")
+                selector.destroy()
+        
+        ttk.Button(
+            frame,
+            text="🚶 Continue as Guest (No Password)",
+            style='Dark.TButton',
+            command=continue_as_guest
+        ).pack(fill='x', pady=5)
+        
+        selector.wait_window()
+    
+    def _load_profiles(self):
+        """Load list of existing profiles with passwords"""
+        profiles_file = os.path.join(self.profiles_dir, "profiles.json")
+        if os.path.exists(profiles_file):
+            with open(profiles_file, 'r') as f:
+                data = json.load(f)
+                # Return dictionary format: {username: password_hash}
+                return data.get('profiles', {})
+        return {}
+    
+    def _save_profiles_list(self, profiles):
+        """Save profiles dictionary with password hashes"""
+        profiles_file = os.path.join(self.profiles_dir, "profiles.json")
+        with open(profiles_file, 'w') as f:
+            json.dump({'profiles': profiles}, f, indent=2)
+    
+    def _hash_password(self, password):
+        """Hash password using SHA-256"""
+        return hashlib.sha256(password.encode()).hexdigest()
+    
+    def _verify_login(self, username, password):
+        """Verify username and password"""
+        profiles = self._load_profiles()
+        
+        # Guest has no password
+        if username == "Guest":
+            return True
+        
+        if username not in profiles:
+            return False
+        
+        password_hash = self._hash_password(password)
+        return profiles[username] == password_hash
+    
+    def _username_exists(self, username):
+        """Check if username already exists"""
+        profiles = self._load_profiles()
+        return username in profiles
+    
+    def _create_account(self, username, password):
+        """Create new user account with password"""
+        try:
+            profiles = self._load_profiles()
+            password_hash = self._hash_password(password)
+            profiles[username] = password_hash
+            self._save_profiles_list(profiles)
+            return True
+        except Exception as e:
+            print(f"Error creating account: {e}")
+            return False
+    
+    def _load_user_profile(self, username):
+        """Load user profile and settings"""
+        self.current_user = username
+        self.current_user_label.configure(
+            text=f"User: {username}",
+            foreground='#00ff88'
+        )
+        
+        # Load user settings
+        settings_file = os.path.join(self.profiles_dir, f"{username}_settings.json")
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r') as f:
+                self.user_settings = json.load(f)
+        else:
+            self.user_settings = {
+                'favorite_actions': [],
+                'preferences': {}
+            }
+            self._save_user_settings()
+        
+        # Load emotion log
+        self._load_emotion_log()
+    
+    def _save_user_settings(self):
+        """Save current user settings"""
+        if self.current_user:
+            settings_file = os.path.join(self.profiles_dir, f"{self.current_user}_settings.json")
+            with open(settings_file, 'w') as f:
+                json.dump(self.user_settings, f, indent=2)
+    
+    def logout_user(self):
+        """Logout current user and return to profile selection"""
+        if self.detection_active:
+            response = messagebox.askyesno(
+                "Logout",
+                "Detection is active. Stop detection and logout?"
+            )
+            if response:
+                self.stop_detection()
+            else:
+                return
+        
+        # Save current data
+        if self.current_user:
+            self._save_emotion_log()
+            self._save_user_settings()
+        
+        # Clear current user
+        saved_user = self.current_user
+        self.current_user = None
+        self.current_user_label.configure(
+            text="Not logged in",
+            foreground='#ff6666'
+        )
+        self.emotion_log = []
+        self.user_settings = {}
+        
+        # Close analytics tab if open
+        if self.analytics_tab is not None:
+            try:
+                self.main_notebook.forget(self.analytics_tab)
+                self.analytics_tab = None
+            except:
+                pass
+        
+        # Show logout confirmation
+        messagebox.showinfo("Logged Out", f"{saved_user} has been logged out successfully.\n\nPlease login again to continue.")
+        
+        # Show profile selector - must login again
+        self.show_profile_selector()
+    
+    def _load_emotion_log(self):
+        """Load emotion log for current user"""
+        if self.current_user:
+            log_file = os.path.join(self.profiles_dir, f"{self.current_user}_emotions.json")
+            if os.path.exists(log_file):
+                with open(log_file, 'r') as f:
+                    self.emotion_log = json.load(f)
+            else:
+                self.emotion_log = []
+    
+    def _log_emotion(self, emotion, confidence):
+        """Log emotion with timestamp"""
+        if self.current_user and self.detection_active:
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'emotion': emotion,
+                'confidence': confidence
+            }
+            self.emotion_log.append(log_entry)
+            
+            # Save every 10 entries to avoid too many writes
+            if len(self.emotion_log) % 10 == 0:
+                self._save_emotion_log()
+    
+    def _save_emotion_log(self):
+        """Save emotion log to file"""
+        if self.current_user:
+            log_file = os.path.join(self.profiles_dir, f"{self.current_user}_emotions.json")
+            with open(log_file, 'w') as f:
+                json.dump(self.emotion_log, f, indent=2)
+    
+    def _track_emotion_change(self, new_emotion, confidence):
+        """Track emotion changes for streaks and spikes"""
+        # Track happy spikes
+        if new_emotion == 'happy' and confidence > 0.7:
+            self.daily_happy_spikes += 1
+        
+        # Track emotion streaks
+        if self.emotion_streak_emotion != new_emotion:
+            self.emotion_streak_emotion = new_emotion
+            self.emotion_streak_start = time.time()
+        
+        # Reset calm streak if angry/fear detected
+        if new_emotion in ['angry', 'fear'] and confidence > 0.7:
+            self.calm_streak_start = time.time()
+    
+    def _check_achievements(self):
+        """Check and display achievement notifications"""
+        if not self.detection_active or self.last_analytics_check is None:
+            return
+        
+        current_time = time.time()
+        # Check every 5 minutes
+        if current_time - self.last_analytics_check < 300:
+            return
+        
+        self.last_analytics_check = current_time
+        
+        # Check calm streak (2 hours)
+        calm_duration = current_time - self.calm_streak_start
+        if calm_duration >= 7200:  # 2 hours
+            self._show_achievement("🧘 Calm Mastery!", "You stayed calm for 2 hours! Keep it up!")
+            self.calm_streak_start = current_time
+        
+        # Check happy spikes
+        if self.daily_happy_spikes >= 3:
+            self._show_achievement("🎉 Joy Spreader!", f"You had {self.daily_happy_spikes} happy moments today!")
+    
+    def _show_achievement(self, title, message):
+        """Show achievement notification"""
+        # Create a toast-like notification
+        toast = tk.Toplevel(self.root)
+        toast.overrideredirect(True)
+        toast.attributes("-topmost", True)
+        toast.configure(bg="#2a2a2a")
+        
+        frame = tk.Frame(toast, bg="#2a2a2a", bd=2, relief='raised')
+        frame.pack(fill='both', expand=True, padx=2, pady=2)
+        
+        tk.Label(
+            frame,
+            text=title,
+            bg="#2a2a2a",
+            fg="#00ff88",
+            font=('Segoe UI', 12, 'bold')
+        ).pack(pady=(10, 5), padx=15)
+        
+        tk.Label(
+            frame,
+            text=message,
+            bg="#2a2a2a",
+            fg="#ffffff",
+            font=('Segoe UI', 10)
+        ).pack(pady=(0, 10), padx=15)
+        
+        # Position at top-right
+        toast.update_idletasks()
+        width = toast.winfo_width()
+        height = toast.winfo_height()
+        x = self.root.winfo_screenwidth() - width - 20
+        y = 80
+        toast.geometry(f"+{x}+{y}")
+        
+        # Auto-close after 4 seconds
+        toast.after(4000, toast.destroy)
+    
+    # ========== ANALYTICS PANEL ==========
+    def show_analytics_panel(self):
+        """Show analytics panel as a tab within the main application"""
+        if not self.current_user:
+            messagebox.showwarning("Analytics", "Please login to view analytics!")
+            return
+        
+        # If analytics tab already exists, switch to it
+        if self.analytics_tab is not None:
+            try:
+                # Find the tab index
+                for i in range(self.main_notebook.index('end')):
+                    if self.main_notebook.tab(i, 'text').startswith('📈'):
+                        self.main_notebook.select(i)
+                        # Refresh the data
+                        self._refresh_analytics_tab()
+                        return
+            except:
+                self.analytics_tab = None
+        
+        # Create new analytics tab
+        self.analytics_tab = ttk.Frame(self.main_notebook, style='Dark.TFrame')
+        self.main_notebook.add(self.analytics_tab, text=f"📈 Analytics - {self.current_user}")
+        
+        # Main container with padding
+        main_frame = ttk.Frame(self.analytics_tab, style='Dark.TFrame', padding=15)
+        main_frame.pack(fill='both', expand=True)
+        main_frame.grid_rowconfigure(1, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+        
+        # Title with close button
+        header_frame = ttk.Frame(main_frame, style='Dark.TFrame')
+        header_frame.grid(row=0, column=0, sticky='ew', pady=(0, 15))
+        header_frame.grid_columnconfigure(0, weight=1)
+        
+        ttk.Label(
+            header_frame,
+            text=f"📈 Mood Analytics - {self.current_user}",
+            style='Title.TLabel'
+        ).grid(row=0, column=0, sticky='w')
+        
+        button_frame = ttk.Frame(header_frame, style='Dark.TFrame')
+        button_frame.grid(row=0, column=1, sticky='e')
+        
+        ttk.Button(
+            button_frame,
+            text="🔄 Refresh",
+            style='Dark.TButton',
+            command=self._refresh_analytics_tab
+        ).pack(side='left', padx=(0, 5))
+        
+        ttk.Button(
+            button_frame,
+            text="✖ Close Tab",
+            style='Dark.TButton',
+            command=self._close_analytics_tab
+        ).pack(side='left')
+        
+        # Create notebook for sub-tabs
+        self.analytics_notebook = ttk.Notebook(main_frame)
+        self.analytics_notebook.grid(row=1, column=0, sticky='nsew')
+        
+        # Tab 1: Today's Stats
+        self.today_frame = ttk.Frame(self.analytics_notebook, style='Dark.TFrame', padding=15)
+        self.analytics_notebook.add(self.today_frame, text="📅 Today")
+        
+        # Tab 2: Weekly Stats
+        self.week_frame = ttk.Frame(self.analytics_notebook, style='Dark.TFrame', padding=15)
+        self.analytics_notebook.add(self.week_frame, text="📊 This Week")
+        
+        # Tab 3: Streaks & Goals
+        self.goals_frame = ttk.Frame(self.analytics_notebook, style='Dark.TFrame', padding=15)
+        self.analytics_notebook.add(self.goals_frame, text="🏆 Achievements")
+        
+        # Populate data
+        self._populate_today_stats(self.today_frame)
+        self._populate_week_stats(self.week_frame)
+        self._populate_goals_stats(self.goals_frame)
+        
+        # Switch to analytics tab
+        self.main_notebook.select(self.analytics_tab)
+    
+    def _close_analytics_tab(self):
+        """Close the analytics tab"""
+        if self.analytics_tab is not None:
+            try:
+                self.main_notebook.forget(self.analytics_tab)
+                self.analytics_tab = None
+                # Switch back to main tab
+                self.main_notebook.select(0)
+            except:
+                pass
+    
+    def _refresh_analytics_tab(self):
+        """Refresh analytics data"""
+        if self.analytics_tab is not None and hasattr(self, 'today_frame'):
+            # Clear existing widgets
+            for widget in self.today_frame.winfo_children():
+                widget.destroy()
+            for widget in self.week_frame.winfo_children():
+                widget.destroy()
+            for widget in self.goals_frame.winfo_children():
+                widget.destroy()
+            
+            # Repopulate
+            self._populate_today_stats(self.today_frame)
+            self._populate_week_stats(self.week_frame)
+            self._populate_goals_stats(self.goals_frame)
+    
+    def _populate_today_stats(self, parent):
+        """Populate today's statistics"""
+        # Filter today's emotions
+        today = datetime.now().date()
+        today_emotions = [
+            entry for entry in self.emotion_log
+            if datetime.fromisoformat(entry['timestamp']).date() == today
+        ]
+        
+        if not today_emotions:
+            ttk.Label(
+                parent,
+                text="No data recorded today yet.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 11)
+            ).pack(pady=20)
+            return
+        
+        # Count emotions
+        emotion_counts = Counter([e['emotion'] for e in today_emotions])
+        
+        ttk.Label(
+            parent,
+            text="🎯 Emotion Distribution Today",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(pady=(0, 15))
+        
+        # Display as bars
+        for emotion in self.emotion_labels:
+            count = emotion_counts.get(emotion, 0)
+            percentage = (count / len(today_emotions) * 100) if today_emotions else 0
+            
+            row_frame = ttk.Frame(parent, style='Dark.TFrame')
+            row_frame.pack(fill='x', pady=5)
+            
+            label_text = f"{self.get_emotion_icon(emotion)} {emotion.capitalize()}"
+            ttk.Label(
+                row_frame,
+                text=label_text,
+                style='Dark.TLabel',
+                width=12
+            ).pack(side='left')
+            
+            # Progress bar
+            progress = ttk.Progressbar(
+                row_frame,
+                length=300,
+                mode='determinate',
+                value=percentage
+            )
+            progress.pack(side='left', padx=10)
+            
+            ttk.Label(
+                row_frame,
+                text=f"{percentage:.1f}%",
+                style='Dark.TLabel'
+            ).pack(side='left')
+        
+        # Session duration
+        if self.session_start_time:
+            session_duration = datetime.now() - self.session_start_time
+            minutes = int(session_duration.total_seconds() / 60)
+            
+            ttk.Label(
+                parent,
+                text=f"\n⏱️ Current Session: {minutes} minutes",
+                style='Dark.TLabel',
+                font=('Segoe UI', 11)
+            ).pack(pady=10)
+        
+        # Most common emotion
+        if emotion_counts:
+            most_common = emotion_counts.most_common(1)[0]
+            ttk.Label(
+                parent,
+                text=f"\n🎭 Most Common: {self.get_emotion_icon(most_common[0])} {most_common[0].capitalize()}",
+                style='Emotion.TLabel'
+            ).pack(pady=5)
+    
+    def _populate_week_stats(self, parent):
+        """Populate this week's statistics"""
+        # Filter this week's emotions
+        week_ago = datetime.now() - timedelta(days=7)
+        week_emotions = [
+            entry for entry in self.emotion_log
+            if datetime.fromisoformat(entry['timestamp']) >= week_ago
+        ]
+        
+        if not week_emotions:
+            ttk.Label(
+                parent,
+                text="No data recorded this week yet.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 11)
+            ).pack(pady=20)
+            return
+        
+        ttk.Label(
+            parent,
+            text="📊 Weekly Summary",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(pady=(0, 15))
+        
+        # Total entries
+        ttk.Label(
+            parent,
+            text=f"Total Mood Checks: {len(week_emotions)}",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11)
+        ).pack(pady=5)
+        
+        # Emotion counts
+        emotion_counts = Counter([e['emotion'] for e in week_emotions])
+        
+        ttk.Label(
+            parent,
+            text="\n🎯 Top Emotions This Week",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11, 'bold')
+        ).pack(pady=10)
+        
+        for emotion, count in emotion_counts.most_common(5):
+            percentage = (count / len(week_emotions) * 100)
+            text = f"{self.get_emotion_icon(emotion)} {emotion.capitalize()}: {percentage:.1f}% ({count} times)"
+            ttk.Label(
+                parent,
+                text=text,
+                style='Dark.TLabel',
+                font=('Segoe UI', 10)
+            ).pack(pady=3, anchor='w', padx=20)
+        
+        # Calculate longest streak
+        self._display_longest_streak(parent, week_emotions)
+    
+    def _display_longest_streak(self, parent, emotions):
+        """Calculate and display longest emotion streak"""
+        if not emotions:
+            return
+        
+        max_streak = 0
+        max_emotion = None
+        current_streak = 1
+        current_emotion = emotions[0]['emotion']
+        
+        for i in range(1, len(emotions)):
+            if emotions[i]['emotion'] == current_emotion:
+                current_streak += 1
+            else:
+                if current_streak > max_streak:
+                    max_streak = current_streak
+                    max_emotion = current_emotion
+                current_emotion = emotions[i]['emotion']
+                current_streak = 1
+        
+        if current_streak > max_streak:
+            max_streak = current_streak
+            max_emotion = current_emotion
+        
+        ttk.Label(
+            parent,
+            text=f"\n🔥 Longest Streak: {self.get_emotion_icon(max_emotion)} {max_emotion.capitalize()} ({max_streak} consecutive)",
+            style='Emotion.TLabel'
+        ).pack(pady=15)
+    
+    def _populate_goals_stats(self, parent):
+        """Populate achievements and goals"""
+        ttk.Label(
+            parent,
+            text="🏆 Achievements & Goals",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(pady=(0, 20))
+        
+        # Calm streak
+        if self.calm_streak_start:
+            calm_duration = time.time() - self.calm_streak_start
+            calm_minutes = int(calm_duration / 60)
+            calm_hours = calm_minutes / 60
+            
+            achievement_frame = ttk.Frame(parent, style='Dark.TFrame')
+            achievement_frame.pack(fill='x', pady=10, padx=20)
+            
+            ttk.Label(
+                achievement_frame,
+                text="🧘 Calm Streak",
+                style='Dark.TLabel',
+                font=('Segoe UI', 11, 'bold')
+            ).pack(anchor='w')
+            
+            ttk.Label(
+                achievement_frame,
+                text=f"Current: {calm_hours:.1f} hours ({calm_minutes} minutes)",
+                style='Dark.TLabel',
+                font=('Segoe UI', 10)
+            ).pack(anchor='w', padx=20)
+            
+            if calm_hours >= 2:
+                ttk.Label(
+                    achievement_frame,
+                    text="✅ Goal Achieved: 2+ hours calm!",
+                    style='Emotion.TLabel'
+                ).pack(anchor='w', padx=20, pady=5)
+        
+        # Happy spikes
+        achievement_frame2 = ttk.Frame(parent, style='Dark.TFrame')
+        achievement_frame2.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            achievement_frame2,
+            text="🎉 Happy Moments Today",
+            style='Dark.TLabel',
+            font=('Segoe UI', 11, 'bold')
+        ).pack(anchor='w')
+        
+        ttk.Label(
+            achievement_frame2,
+            text=f"Count: {self.daily_happy_spikes}",
+            style='Dark.TLabel',
+            font=('Segoe UI', 10)
+        ).pack(anchor='w', padx=20)
+        
+        if self.daily_happy_spikes >= 3:
+            ttk.Label(
+                achievement_frame2,
+                text="✅ Goal Achieved: 3+ happy moments!",
+                style='Emotion.TLabel'
+            ).pack(anchor='w', padx=20, pady=5)
+        
+        # Emotion balance
+        if self.emotion_log:
+            today = datetime.now().date()
+            today_emotions = [
+                entry for entry in self.emotion_log
+                if datetime.fromisoformat(entry['timestamp']).date() == today
+            ]
+            
+            if today_emotions:
+                emotion_counts = Counter([e['emotion'] for e in today_emotions])
+                positive = emotion_counts.get('happy', 0) + emotion_counts.get('surprise', 0)
+                negative = emotion_counts.get('sad', 0) + emotion_counts.get('angry', 0) + emotion_counts.get('fear', 0)
+                
+                achievement_frame3 = ttk.Frame(parent, style='Dark.TFrame')
+                achievement_frame3.pack(fill='x', pady=10, padx=20)
+                
+                ttk.Label(
+                    achievement_frame3,
+                    text="⚖️ Emotional Balance",
+                    style='Dark.TLabel',
+                    font=('Segoe UI', 11, 'bold')
+                ).pack(anchor='w')
+                
+                if positive > negative:
+                    ttk.Label(
+                        achievement_frame3,
+                        text="✨ More positive emotions today! Keep it up!",
+                        style='Emotion.TLabel'
+                    ).pack(anchor='w', padx=20, pady=5)
+                else:
+                    ttk.Label(
+                        achievement_frame3,
+                        text="💪 Remember to take care of yourself",
+                        style='Dark.TLabel',
+                        font=('Segoe UI', 10)
+                    ).pack(anchor='w', padx=20, pady=5)
 
     # ========== ALL ACTION METHODS (UNCHANGED) ==========
     def play_upbeat_music(self):
