@@ -42,17 +42,17 @@ class ModernDarkSpeechApp:
         except Exception:
             pass
 
-        # Theme palette
+        # Theme palette (matching emotion module)
         self.colors = {
-            "bg_primary": "#0d1117",
-            "bg_secondary": "#161b22",
-            "bg_tertiary": "#21262d",
-            "bg_hover": "#30363d",
+            "bg_primary": "#1a1a1a",
+            "bg_secondary": "#1a1a1a",
+            "bg_tertiary": "#2a2a2a",
+            "bg_hover": "#333333",
             "accent_primary": "#238636",
-            "accent_secondary": "#1f6feb",
+            "accent_secondary": "#2a4a7c",
             "accent_danger": "#da3633",
             "accent_warning": "#fb8500",
-            "text_primary": "#f0f6fc",
+            "text_primary": "#ffffff",
             "text_secondary": "#c9d1d9",
             "text_muted": "#8b949e",
             "border": "#30363d",
@@ -135,11 +135,21 @@ class ModernDarkSpeechApp:
     def _setup_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
+        # Frame styles
+        style.configure("Dark.TFrame", background=self.colors["bg_secondary"])
         style.configure("Surface.TFrame", background=self.colors["bg_secondary"])
         style.configure("Canvas.TFrame", background=self.colors["bg_tertiary"])
+        # Label styles
+        style.configure("Dark.TLabel", background=self.colors["bg_secondary"], foreground=self.colors["text_primary"], font=("Segoe UI", 10))
         style.configure("Primary.TLabel", background=self.colors["bg_secondary"], foreground=self.colors["text_primary"])
         style.configure("Muted.TLabel", background=self.colors["bg_secondary"], foreground=self.colors["text_secondary"])
         style.configure("Title.TLabel", background=self.colors["bg_secondary"], foreground=self.colors["text_primary"], font=("Segoe UI", 18, "bold"))
+        # Button styles
+        style.configure("Dark.TButton", background=self.colors["bg_hover"], foreground=self.colors["text_primary"], font=("Segoe UI", 9), padding=8)
+        style.map("Dark.TButton", background=[("active", "#444444"), ("pressed", "#555555")])
+        style.configure("Gesture.TButton", background=self.colors["accent_secondary"], foreground=self.colors["text_primary"], font=("Segoe UI", 9), padding=8)
+        style.map("Gesture.TButton", background=[("active", "#3a5a8c"), ("pressed", "#4a6a9c")])
+        # Treeview styles
         style.configure("Dark.Treeview",
                         background=self.colors["bg_tertiary"],
                         fieldbackground=self.colors["bg_tertiary"],
@@ -149,9 +159,11 @@ class ModernDarkSpeechApp:
                         background=self.colors["bg_secondary"],
                         foreground=self.colors["text_primary"],
                         borderwidth=1, relief="solid", font=("Segoe UI", 11, "bold"))
+        # Notebook styles
         style.configure("TNotebook", background=self.colors["bg_secondary"], borderwidth=0)
         style.configure("TNotebook.Tab", background=self.colors["bg_tertiary"], foreground=self.colors["text_primary"], padding=(14, 8))
         style.map("TNotebook.Tab", background=[("selected", self.colors["bg_hover"])])
+        # Scrollbar styles
         style.configure("Dark.Vertical.TScrollbar",
                         background=self.colors["bg_secondary"],
                         troughcolor=self.colors["bg_tertiary"],
@@ -162,180 +174,176 @@ class ModernDarkSpeechApp:
     # Layout
     # ------------------------
     def _build_layout(self):
-        self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
+        # Main container (matching emotion module pattern)
+        main_container = ttk.Frame(self.root, style='Dark.TFrame')
+        main_container.pack(fill='both', expand=True, padx=15, pady=15)
+        main_container.grid_rowconfigure(1, weight=1)
+        main_container.grid_columnconfigure(0, weight=1)
+        
+        # Store reference to main container
+        self.main_container = main_container
 
         # Header
-        header = tk.Frame(self.root, bg=self.colors["bg_secondary"], bd=2, relief=tk.SOLID, height=90)
+        header = tk.Frame(main_container, bg=self.colors["bg_secondary"], bd=0, relief=tk.FLAT, height=90)
         header.grid(row=0, column=0, sticky="nsew")
         header.grid_propagate(False)
         header.grid_columnconfigure(0, weight=1)
         header.grid_columnconfigure(1, weight=0)
         header.grid_columnconfigure(2, weight=0)
 
-        title = tk.Label(header,
-                         text="🎤 AI Speech Assistant + 🖐️ Hand Gesture Mouse",
-                         font=("Segoe UI", 24, "bold"),
-                         bg=self.colors["bg_secondary"], fg=self.colors["text_primary"])
-        subtitle = tk.Label(header,
+        title = ttk.Label(header,
+                         text="🎤 AI Speech Assistant + 🖐️ Hand Gesture Mouse Control",
+                         style='Title.TLabel')
+        subtitle = ttk.Label(header,
                             text="Say 'Jarvis' to activate • Use the button or voice to control the virtual mouse",
-                            font=("Segoe UI", 12),
-                            bg=self.colors["bg_secondary"], fg=self.colors["text_secondary"])
-        title.grid(row=0, column=0, sticky="w", padx=20, pady=(16, 0))
-        subtitle.grid(row=1, column=0, sticky="w", padx=20, pady=(2, 12))
+                            style='Dark.TLabel',
+                            font=("Segoe UI", 10))
+        title.grid(row=0, column=0, sticky="w", padx=0, pady=(0, 5))
+        subtitle.grid(row=1, column=0, sticky="w", padx=0, pady=(0, 0))
 
         # Back to Dashboard button
-        dashboard_btn = tk.Button(
+        dashboard_btn = ttk.Button(
             header,
             text="🏠 Back to Dashboard",
-            font=("Segoe UI", 11, "bold"),
-            bg=self.colors["accent_secondary"],
-            fg="white",
-            activebackground=self.colors["accent_primary"],
-            relief=tk.RAISED,
-            bd=2,
-            cursor="hand2",
-            command=self.back_to_dashboard,
-            padx=20,
-            pady=8
+            style='Gesture.TButton',
+            command=self.back_to_dashboard
         )
-        dashboard_btn.grid(row=0, column=1, sticky="ne", padx=(0, 20), pady=(12, 0))
+        dashboard_btn.grid(row=0, column=2, sticky="e", padx=0, pady=0)
         
-        status_card = tk.Frame(header, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        status_card.grid(row=0, column=2, rowspan=2, sticky="nse", padx=20, pady=12)
-        tk.Label(status_card, text="System Status", font=("Segoe UI", 12, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).pack(padx=14, pady=(12, 6))
+        status_card = tk.Frame(header, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        status_card.grid(row=0, column=1, rowspan=2, sticky="nse", padx=(15, 15), pady=0)
+        tk.Label(status_card, text="System Status", font=("Segoe UI", 11, "bold"),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).pack(padx=12, pady=(10, 6))
         self.wake_status_label = tk.Label(status_card, textvariable=self.wake_word_status_var,
-                                          font=("Segoe UI", 11, "bold"),
+                                          font=("Segoe UI", 10),
                                           bg=self.colors["bg_tertiary"], fg=self.colors["accent_warning"])
-        self.wake_status_label.pack(padx=14, pady=(0, 6))
+        self.wake_status_label.pack(padx=12, pady=(0, 5))
         self.gesture_status_label = tk.Label(status_card, textvariable=self.gesture_status_var,
-                                             font=("Segoe UI", 11, "bold"),
+                                             font=("Segoe UI", 10),
                                              bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"])
-        self.gesture_status_label.pack(padx=14, pady=(0, 12))
+        self.gesture_status_label.pack(padx=12, pady=(0, 10))
 
         # Paned split
-        paned = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
-        paned.grid(row=1, column=0, sticky="nsew", padx=16, pady=16)
+        paned = ttk.Panedwindow(main_container, orient=tk.HORIZONTAL)
+        paned.grid(row=1, column=0, sticky="nsew", padx=0, pady=(15, 0))
 
         # Sidebar
-        self.sidebar = tk.Frame(paned, bg=self.colors["bg_secondary"], bd=2, relief=tk.SOLID)
+        self.sidebar = ttk.Frame(paned, style='Dark.TFrame')
         paned.add(self.sidebar, weight=1)
 
         # Main
-        self.main = tk.Frame(paned, bg=self.colors["bg_secondary"], bd=2, relief=tk.SOLID)
+        self.main = ttk.Frame(paned, style='Dark.TFrame')
         paned.add(self.main, weight=3)
 
         # Sidebar content
         self.sidebar.grid_rowconfigure(3, weight=1)
         self.sidebar.grid_columnconfigure(0, weight=1)
 
-        tk.Label(self.sidebar, text="🎙️ Voice Control Center",
-                 font=("Segoe UI", 18, "bold"), bg=self.colors["bg_secondary"], fg=self.colors["text_primary"]).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(16, 10)
+        ttk.Label(self.sidebar, text="🎙️ Voice Control Center",
+                 style='Title.TLabel').grid(
+            row=0, column=0, sticky="w", padx=15, pady=(0, 15)
         )
 
         # Control card
-        control_card = tk.Frame(self.sidebar, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        control_card.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+        control_card = tk.Frame(self.sidebar, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        control_card.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
         control_card.grid_columnconfigure(0, weight=1)
-        tk.Label(control_card, text="🎯 Voice Control System", font=("Segoe UI", 13, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=14, pady=(12, 4))
+        tk.Label(control_card, text="🎯 Voice Control System", font=("Segoe UI", 12, "bold"),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 8))
 
-        self.system_indicator = tk.Label(control_card, text="🟡 AUTO-STARTING", font=("Segoe UI", 12, "bold"),
+        self.system_indicator = tk.Label(control_card, text="🟡 AUTO-STARTING", font=("Segoe UI", 11),
                                          bg=self.colors["bg_tertiary"], fg=self.colors["accent_warning"])
-        self.system_indicator.grid(row=1, column=0, sticky="w", padx=14, pady=(0, 8))
+        self.system_indicator.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
 
         btns = tk.Frame(control_card, bg=self.colors["bg_tertiary"])
-        btns.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 12))
+        btns.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 12))
         for i in range(4):
             btns.grid_columnconfigure(i, weight=1)
 
         self.system_toggle_btn = tk.Button(
-            btns, text="🔴 Stop Voice Control", font=("Segoe UI", 11, "bold"),
+            btns, text="🔴 Stop Voice", font=("Segoe UI", 9, "bold"),
             bg=self.colors["accent_danger"], fg="white", activebackground="#b62b29",
-            relief=tk.RAISED, bd=2, height=2, cursor="hand2",
+            relief=tk.FLAT, bd=0, height=2, cursor="hand2",
             command=self.toggle_voice_system)
-        self.system_toggle_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.system_toggle_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 
         self.manual_btn = tk.Button(
-            btns, text="🎤 Manual Command", font=("Segoe UI", 11, "bold"),
-            bg=self.colors["bg_hover"], fg=self.colors["text_primary"], activebackground=self.colors["accent_secondary"],
-            relief=tk.RAISED, bd=2, height=2, cursor="hand2",
+            btns, text="🎤 Manual", font=("Segoe UI", 9, "bold"),
+            bg=self.colors["bg_hover"], fg=self.colors["text_primary"], activebackground="#444444",
+            relief=tk.FLAT, bd=0, height=2, cursor="hand2",
             command=self.manual_listen)
-        self.manual_btn.grid(row=0, column=1, sticky="ew", padx=6)
+        self.manual_btn.grid(row=0, column=1, sticky="ew", padx=5)
 
         self.stop_listening_btn = tk.Button(
-            btns, text="⏹️ Stop Listening", font=("Segoe UI", 11, "bold"),
+            btns, text="⏹️ Stop", font=("Segoe UI", 9, "bold"),
             bg=self.colors["accent_warning"], fg="white", activebackground=self.colors["accent_danger"],
-            relief=tk.RAISED, bd=2, height=2, cursor="hand2",
+            relief=tk.FLAT, bd=0, height=2, cursor="hand2",
             command=self.stop_continuous_listening, state="disabled")
-        self.stop_listening_btn.grid(row=0, column=2, sticky="ew", padx=6)
+        self.stop_listening_btn.grid(row=0, column=2, sticky="ew", padx=5)
 
         # Hand Gesture toggle button
         self.gesture_toggle_btn = tk.Button(
-            btns, text="🖐️ Hand Gesture Mouse: OFF", font=("Segoe UI", 11, "bold"),
-            bg=self.colors["bg_hover"], fg=self.colors["text_primary"], activebackground=self.colors["accent_secondary"],
-            relief=tk.RAISED, bd=2, height=2, cursor="hand2",
+            btns, text="🖐️ Gesture: OFF", font=("Segoe UI", 9, "bold"),
+            bg=self.colors["accent_secondary"], fg=self.colors["text_primary"], activebackground="#3a5a8c",
+            relief=tk.FLAT, bd=0, height=2, cursor="hand2",
             command=self.toggle_gesture)
-        self.gesture_toggle_btn.grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        self.gesture_toggle_btn.grid(row=0, column=3, sticky="ew", padx=(5, 0))
 
         # Status card
-        status_card2 = tk.Frame(self.sidebar, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        status_card2.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
+        status_card2 = tk.Frame(self.sidebar, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        status_card2.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
         status_card2.grid_columnconfigure(0, weight=1)
-        tk.Label(status_card2, text="System Status", font=("Segoe UI", 13, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=14, pady=(12, 4))
+        tk.Label(status_card2, text="📊 Current Status", font=("Segoe UI", 12, "bold"),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 8))
 
-        status_box = tk.Frame(status_card2, bg=self.colors["bg_hover"], bd=1, relief=tk.SOLID)
-        status_box.grid(row=1, column=0, sticky="ew", padx=12, pady=(4, 10))
+        status_box = tk.Frame(status_card2, bg=self.colors["bg_hover"], bd=0, relief=tk.FLAT)
+        status_box.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
         status_box.grid_columnconfigure(0, weight=1)
         tk.Label(status_box, textvariable=self.status_var,
-                 font=("Segoe UI", 11, "bold"),
-                 bg=self.colors["bg_hover"], fg=self.colors["accent_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=10)
+                 font=("Segoe UI", 10),
+                 bg=self.colors["bg_hover"], fg=self.colors["accent_primary"]).grid(row=0, column=0, sticky="w", padx=10, pady=8)
 
-        cmd_box = tk.Frame(status_card2, bg=self.colors["bg_hover"], bd=1, relief=tk.SOLID)
-        cmd_box.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
+        cmd_box = tk.Frame(status_card2, bg=self.colors["bg_hover"], bd=0, relief=tk.FLAT)
+        cmd_box.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 12))
         cmd_box.grid_columnconfigure(0, weight=1)
         self.command_label = tk.Label(cmd_box, textvariable=self.current_command_var,
-                                      font=("Segoe UI", 10), wraplength=360,
+                                      font=("Segoe UI", 9), wraplength=360,
                                       bg=self.colors["bg_hover"], fg=self.colors["text_primary"], justify="left")
-        self.command_label.grid(row=0, column=0, sticky="ew", padx=12, pady=10)
+        self.command_label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
 
         # Quick Commands
-        qc_card = tk.Frame(self.sidebar, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        qc_card.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 16))
+        qc_card = tk.Frame(self.sidebar, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        qc_card.grid(row=3, column=0, sticky="nsew", padx=15, pady=(0, 0))
         qc_card.grid_rowconfigure(2, weight=1)
         qc_card.grid_columnconfigure(0, weight=1)
-        tk.Label(qc_card, text="⚡ Quick Test Commands", font=("Segoe UI", 13, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=14, pady=(12, 4))
+        tk.Label(qc_card, text="⚡ Quick Test Commands", font=("Segoe UI", 12, "bold"),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
         tk.Label(qc_card, text="Speak after activation (or click to simulate):", font=("Segoe UI", 9, "italic"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_secondary"]).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 6))
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_secondary"]).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
         canvas = tk.Canvas(qc_card, bg=self.colors["bg_tertiary"], highlightthickness=0)
         vs = ttk.Scrollbar(qc_card, orient="vertical", command=canvas.yview, style="Dark.Vertical.TScrollbar")
         self.qc_frame = tk.Frame(canvas, bg=self.colors["bg_tertiary"])
         self.qc_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=self.qc_frame, anchor="nw")
         canvas.configure(yscrollcommand=vs.set)
-        canvas.grid(row=2, column=0, sticky="nsew", padx=(12, 0), pady=(4, 12))
-        vs.grid(row=2, column=1, sticky="ns", padx=(6, 10), pady=(4, 12))
+        canvas.grid(row=2, column=0, sticky="nsew", padx=(10, 0), pady=(0, 12))
+        vs.grid(row=2, column=1, sticky="ns", padx=(0, 10), pady=(0, 12))
         self._populate_quick_commands(self.qc_frame)
 
         # Main: tabs
         self.main.grid_rowconfigure(1, weight=1)
         self.main.grid_columnconfigure(0, weight=1)
-        tk.Label(self.main, text="Control & Monitoring", font=("Segoe UI", 18, "bold"),
-                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 8))
+        ttk.Label(self.main, text="Control & Monitoring", style='Title.TLabel').grid(row=0, column=0, sticky="w", padx=15, pady=(0, 15))
 
         self.notebook = ttk.Notebook(self.main)
-        self.notebook.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 0))
 
-        self.tab_control = tk.Frame(self.notebook, bg=self.colors["bg_secondary"])
-        self.tab_commands = tk.Frame(self.notebook, bg=self.colors["bg_secondary"])
-        self.tab_history = tk.Frame(self.notebook, bg=self.colors["bg_secondary"])
-        self.tab_settings = tk.Frame(self.notebook, bg=self.colors["bg_secondary"])
-        self.tab_logs = tk.Frame(self.notebook, bg=self.colors["bg_secondary"])
-        self.tab_gesture = tk.Frame(self.notebook, bg=self.colors["bg_secondary"])  # NEW
+        self.tab_control = ttk.Frame(self.notebook, style='Dark.TFrame')
+        self.tab_commands = ttk.Frame(self.notebook, style='Dark.TFrame')
+        self.tab_history = ttk.Frame(self.notebook, style='Dark.TFrame')
+        self.tab_settings = ttk.Frame(self.notebook, style='Dark.TFrame')
+        self.tab_logs = ttk.Frame(self.notebook, style='Dark.TFrame')
+        self.tab_gesture = ttk.Frame(self.notebook, style='Dark.TFrame')
 
         self.notebook.add(self.tab_control, text="🎛️ Control")
         self.notebook.add(self.tab_commands, text="📋 Commands")
@@ -352,14 +360,14 @@ class ModernDarkSpeechApp:
         self._build_tab_gesture()  # NEW
 
         # Footer
-        footer = tk.Frame(self.root, bg=self.colors["bg_secondary"], bd=2, relief=tk.SOLID, height=44)
+        footer = tk.Frame(main_container, bg=self.colors["bg_secondary"], bd=0, relief=tk.FLAT, height=40)
         footer.grid(row=2, column=0, sticky="nsew")
         footer.grid_propagate(False)
         self.status_bar_var = tk.StringVar(value="Auto-starting voice control system…")
         tk.Label(footer, textvariable=self.status_bar_var,
-                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"], font=("Segoe UI", 10, "bold")).pack(side="left", padx=16)
+                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"], font=("Segoe UI", 9)).pack(side="left", padx=0)
         tk.Label(footer, text="v6.2 — Voice + Embedded Gesture", bg=self.colors["bg_secondary"],
-                 fg=self.colors["text_muted"], font=("Segoe UI", 9)).pack(side="right", padx=16)
+                 fg=self.colors["text_muted"], font=("Segoe UI", 9)).pack(side="right", padx=0)
 
     def _populate_quick_commands(self, parent):
         commands = [
@@ -393,10 +401,10 @@ class ModernDarkSpeechApp:
         ]
         for text, cmd in commands:
             b = tk.Button(parent, text=text, anchor="w",
-                          font=("Segoe UI", 10, "bold"),
+                          font=("Segoe UI", 9),
                           bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
-                          activebackground=self.colors["accent_secondary"], activeforeground="white",
-                          relief=tk.RAISED, bd=2, padx=12, pady=6,
+                          activebackground="#444444", activeforeground="white",
+                          relief=tk.FLAT, bd=0, padx=10, pady=8,
                           command=lambda c=cmd: self.test_command(c), cursor="hand2")
             b.pack(fill="x", padx=6, pady=3)
 
@@ -407,8 +415,8 @@ class ModernDarkSpeechApp:
         f = self.tab_control
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
-        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 10))
         self.instructions_label = tk.Label(
             card,
             text=("How to Use:\n"
@@ -422,35 +430,34 @@ class ModernDarkSpeechApp:
                   "   • Index+Pinky (rock sign) = right click.\n"
                   "   • Index+Middle+Ring (no pinky) = scroll."),
             justify="left", anchor="w",
-            font=("Segoe UI", 10),
-            bg=self.colors["bg_tertiary"], fg=self.colors["text_secondary"], padx=12, pady=12
+            font=("Segoe UI", 9),
+            bg=self.colors["bg_tertiary"], fg=self.colors["text_secondary"], padx=15, pady=15
         )
         self.instructions_label.pack(fill="x")
 
-        card2 = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card2.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        card2 = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card2.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         card2.grid_rowconfigure(1, weight=1)
         card2.grid_columnconfigure(0, weight=1)
-        tk.Label(card2, text="📈 Recent Activity", font=("Segoe UI", 13, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        tk.Label(card2, text="📈 Recent Activity", font=("Segoe UI", 12, "bold"),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 8))
         self.activity_scroll = scrolledtext.ScrolledText(
-            card2, font=("Consolas", 10),
+            card2, font=("Consolas", 9),
             bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
             insertbackground=self.colors["text_primary"],
             selectbackground=self.colors["accent_secondary"],
-            relief=tk.SOLID, bd=2
+            relief=tk.FLAT, bd=0
         )
-        self.activity_scroll.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.activity_scroll.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 12))
         self.load_recent_activity(self.activity_scroll)
 
     def _build_tab_commands(self):
         f = self.tab_commands
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
-        tk.Label(f, text="📋 Available Voice Commands", font=("Segoe UI", 16, "bold"),
-                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"]).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
-        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        ttk.Label(f, text="📋 Available Voice Commands", style='Title.TLabel').grid(row=0, column=0, sticky="w", padx=15, pady=(15, 10))
+        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         card.grid_rowconfigure(0, weight=1)
         card.grid_columnconfigure(0, weight=1)
         columns = ("Command", "Pattern", "Type", "Status")
@@ -461,23 +468,23 @@ class ModernDarkSpeechApp:
         vs = ttk.Scrollbar(card, orient=tk.VERTICAL, command=self.commands_tree.yview, style="Dark.Vertical.TScrollbar")
         self.commands_tree.configure(yscrollcommand=vs.set)
         self.commands_tree.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=10)
-        vs.grid(row=0, column=1, sticky="ns", padx=(6, 10), pady=10)
+        vs.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=10)
         self.load_commands()
 
     def _build_tab_history(self):
         f = self.tab_history
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
-        header = tk.Frame(f, bg=self.colors["bg_secondary"])
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
-        tk.Label(header, text="📊 Command History", font=("Segoe UI", 16, "bold"),
-                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"]).pack(side="left")
-        tk.Button(header, text="🔄 Refresh", font=("Segoe UI", 10, "bold"),
+        header = ttk.Frame(f, style='Dark.TFrame')
+        header.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 10))
+        ttk.Label(header, text="📊 Command History", style='Title.TLabel').pack(side="left")
+        refresh_btn = tk.Button(header, text="🔄 Refresh", font=("Segoe UI", 9),
                   bg=self.colors["accent_secondary"], fg="white",
-                  activebackground=self.colors["accent_primary"], bd=2, relief=tk.RAISED,
-                  command=self.load_history, cursor="hand2").pack(side="right")
-        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+                  activebackground="#3a5a8c", bd=0, relief=tk.FLAT,
+                  command=self.load_history, cursor="hand2", padx=12, pady=6)
+        refresh_btn.pack(side="right")
+        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         card.grid_rowconfigure(0, weight=1)
         card.grid_columnconfigure(0, weight=1)
         columns = ("Time", "Command", "Status", "Confidence")
@@ -488,87 +495,87 @@ class ModernDarkSpeechApp:
         vs = ttk.Scrollbar(card, orient=tk.VERTICAL, command=self.history_tree.yview, style="Dark.Vertical.TScrollbar")
         self.history_tree.configure(yscrollcommand=vs.set)
         self.history_tree.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=10)
-        vs.grid(row=0, column=1, sticky="ns", padx=(6, 10), pady=10)
+        vs.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=10)
         self.load_history()
 
     def _build_tab_settings(self):
         f = self.tab_settings
         f.grid_columnconfigure(1, weight=1)
-        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=12)
+        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=0, column=0, columnspan=2, sticky="ew", padx=15, pady=15)
         card.grid_columnconfigure(1, weight=1)
 
-        tk.Label(card, text="🎤 Speech Recognition Settings", font=("Segoe UI", 14, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 8))
+        tk.Label(card, text="🎤 Speech Recognition Settings", font=("Segoe UI", 12, "bold"),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 12))
 
-        tk.Label(card, text="Confidence Threshold", font=("Segoe UI", 11, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=1, column=0, sticky="w", padx=12, pady=(4, 2))
+        tk.Label(card, text="Confidence Threshold", font=("Segoe UI", 10),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=1, column=0, sticky="w", padx=12, pady=(8, 4))
         self.confidence_var = tk.DoubleVar(value=self.settings["confidence_threshold"])
         conf_scale = tk.Scale(card, from_=0.1, to=1.0, resolution=0.1, orient=tk.HORIZONTAL,
                               variable=self.confidence_var, length=360,
                               bg=self.colors["bg_tertiary"], troughcolor=self.colors["bg_hover"],
                               fg=self.colors["text_primary"], highlightthickness=0)
-        conf_scale.grid(row=1, column=1, sticky="w", padx=12, pady=(4, 2))
+        conf_scale.grid(row=1, column=1, sticky="w", padx=12, pady=(8, 4))
 
         # camera settings
-        tk.Label(card, text="📷 Camera Index", font=("Segoe UI", 11, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=2, column=0, sticky="w", padx=12, pady=(12, 2))
+        tk.Label(card, text="📷 Camera Index", font=("Segoe UI", 10),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=2, column=0, sticky="w", padx=12, pady=(8, 4))
         self.camera_index_var = tk.IntVar(value=int(self.settings.get("camera_index", 0)))
         tk.Spinbox(card, from_=0, to=10, textvariable=self.camera_index_var, width=6,
-                   font=("Segoe UI", 11), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
-                   insertbackground=self.colors["text_primary"]).grid(row=2, column=1, sticky="w", padx=12, pady=(12, 2))
+                   font=("Segoe UI", 10), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
+                   insertbackground=self.colors["text_primary"]).grid(row=2, column=1, sticky="w", padx=12, pady=(8, 4))
 
-        tk.Label(card, text="Resolution (WxH)", font=("Segoe UI", 11, "bold"),
-                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=3, column=0, sticky="w", padx=12, pady=(4, 2))
+        tk.Label(card, text="Resolution (WxH)", font=("Segoe UI", 10),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=3, column=0, sticky="w", padx=12, pady=(8, 4))
         self.camera_w_var = tk.IntVar(value=int(self.settings.get("camera_width", 640)))
         self.camera_h_var = tk.IntVar(value=int(self.settings.get("camera_height", 480)))
         res_frame = tk.Frame(card, bg=self.colors["bg_tertiary"])
-        res_frame.grid(row=3, column=1, sticky="w", padx=12, pady=(4, 2))
+        res_frame.grid(row=3, column=1, sticky="w", padx=12, pady=(8, 4))
         tk.Entry(res_frame, textvariable=self.camera_w_var, width=8,
-                 font=("Segoe UI", 11), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
+                 font=("Segoe UI", 10), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
                  insertbackground=self.colors["text_primary"]).pack(side="left")
-        tk.Label(res_frame, text=" x ", font=("Segoe UI", 11, "bold"),
+        tk.Label(res_frame, text=" x ", font=("Segoe UI", 10),
                  bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).pack(side="left")
         tk.Entry(res_frame, textvariable=self.camera_h_var, width=8,
-                 font=("Segoe UI", 11), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
+                 font=("Segoe UI", 10), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
                  insertbackground=self.colors["text_primary"]).pack(side="left")
 
         self.voice_feedback_var = tk.BooleanVar(value=self.settings["voice_feedback"])
         tk.Checkbutton(card, text="Enable Voice Feedback", variable=self.voice_feedback_var,
                        bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"],
                        selectcolor=self.colors["bg_hover"], activebackground=self.colors["bg_tertiary"]).grid(
-            row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 8)
+            row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 8)
         )
 
-        tk.Button(card, text="💾 Save Settings", font=("Segoe UI", 12, "bold"),
+        tk.Button(card, text="💾 Save Settings", font=("Segoe UI", 9, "bold"),
                   bg=self.colors["accent_primary"], fg="white",
-                  activebackground="#1b6d2e", bd=3, relief=tk.RAISED, padx=18, pady=8,
-                  cursor="hand2", command=self.save_settings).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 12))
+                  activebackground="#1b6d2e", bd=0, relief=tk.FLAT, padx=16, pady=10,
+                  cursor="hand2", command=self.save_settings).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 12))
 
     def _build_tab_logs(self):
         f = self.tab_logs
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
-        header = tk.Frame(f, bg=self.colors["bg_secondary"])
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
-        tk.Label(header, text="📝 System Logs", font=("Segoe UI", 16, "bold"),
-                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"]).pack(side="left")
-        tk.Button(header, text="🗑️ Clear Logs", font=("Segoe UI", 10, "bold"),
+        header = ttk.Frame(f, style='Dark.TFrame')
+        header.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 10))
+        ttk.Label(header, text="📝 System Logs", style='Title.TLabel').pack(side="left")
+        clear_btn = tk.Button(header, text="🗑️ Clear Logs", font=("Segoe UI", 9),
                   bg=self.colors["accent_danger"], fg="white",
-                  activebackground="#b12a27", bd=2, relief=tk.RAISED,
-                  command=self.clear_logs, cursor="hand2").pack(side="right")
-        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+                  activebackground="#b12a27", bd=0, relief=tk.FLAT,
+                  command=self.clear_logs, cursor="hand2", padx=12, pady=6)
+        clear_btn.pack(side="right")
+        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         card.grid_rowconfigure(0, weight=1)
         card.grid_columnconfigure(0, weight=1)
         self.logs_text = scrolledtext.ScrolledText(
-            card, font=("Consolas", 10),
+            card, font=("Consolas", 9),
             bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
             insertbackground=self.colors["text_primary"],
             selectbackground=self.colors["accent_secondary"],
-            relief=tk.SOLID, bd=2
+            relief=tk.FLAT, bd=0
         )
-        self.logs_text.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        self.logs_text.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.safe_log_message("System initialized successfully")
         self.safe_log_message("Speech recognition engine ready")
         self.safe_log_message("Command processor online")
@@ -580,26 +587,25 @@ class ModernDarkSpeechApp:
         f.grid_rowconfigure(1, weight=1)
         f.grid_columnconfigure(0, weight=1)
 
-        header = tk.Frame(f, bg=self.colors["bg_secondary"])
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
-        tk.Label(header, text="🖐️ Virtual Mouse — Live", font=("Segoe UI", 16, "bold"),
-                 bg=self.colors["bg_secondary"], fg=self.colors["text_primary"]).pack(side="left")
+        header = ttk.Frame(f, style='Dark.TFrame')
+        header.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 10))
+        ttk.Label(header, text="🖐️ Virtual Mouse — Live", style='Title.TLabel').pack(side="left")
 
         # Video container
-        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=2, relief=tk.SOLID)
-        card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        card = tk.Frame(f, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 10))
         card.grid_rowconfigure(0, weight=1)
         card.grid_columnconfigure(0, weight=1)
 
         self.gesture_video_label = tk.Label(card, bg=self.colors["bg_tertiary"])
-        self.gesture_video_label.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        self.gesture_video_label.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
         # Info footer
         info = tk.Label(f, text=("Raise all five fingers to toggle gesture tracking ON/OFF • "
                                  "Thumb+Index short hold=LeftClick / long=Drag • "
                                  "Index+Pinky=RightClick • Index+Middle+Ring=Scroll"),
                         bg=self.colors["bg_secondary"], fg=self.colors["text_secondary"], font=("Segoe UI", 9))
-        info.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
+        info.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
 
     # ------------------------
     # Responsiveness helpers
@@ -633,7 +639,7 @@ class ModernDarkSpeechApp:
 
     def start_voice_control(self):
         self.wake_word_active = True
-        self.system_toggle_btn.config(text="🔴 Stop Voice Control", bg=self.colors["accent_danger"])
+        self.system_toggle_btn.config(text="🔴 Stop Voice", bg=self.colors["accent_danger"])
         self.update_system_status("🟡 WAITING FOR WAKE WORD", self.colors["accent_warning"])
         self.status_var.set("Listening for Wake Word")
         self.current_command_var.set(f"Say '{self.settings['wake_word'].upper()}' to activate continuous listening…")
@@ -645,11 +651,11 @@ class ModernDarkSpeechApp:
     def stop_voice_control(self):
         self.wake_word_active = False
         self.continuous_listening = False
-        self.system_toggle_btn.config(text="🟢 Start Voice Control", bg=self.colors["accent_primary"])
+        self.system_toggle_btn.config(text="🟢 Start Voice", bg=self.colors["accent_primary"])
         self.stop_listening_btn.config(state="disabled")
         self.update_system_status("🔴 INACTIVE", self.colors["accent_danger"])
         self.status_var.set("Stopped")
-        self.current_command_var.set("Click 'Start Voice Control' to begin")
+        self.current_command_var.set("Click 'Start Voice' to begin")
         self.status_bar_var.set("Voice control system stopped")
         self.safe_log_message("🔴 System stopped")
 
@@ -756,7 +762,7 @@ class ModernDarkSpeechApp:
                 self.current_command_var.set(f"Say '{self.settings['wake_word'].upper()}' to activate…")
                 self.status_bar_var.set(f"🎯 Say '{self.settings['wake_word'].upper()}' to activate")
             else:
-                self.current_command_var.set("Click 'Start Voice Control' or use 'Manual Command'")
+                self.current_command_var.set("Click 'Start Voice' or use 'Manual'")
                 self.status_bar_var.set("System inactive — Use controls to interact")
 
     def process_command(self, text, confidence):
@@ -880,11 +886,11 @@ class ModernDarkSpeechApp:
         if running:
             self.gesture_status_var.set("🟩 Gesture: ON")
             self.gesture_status_label.config(fg=self.colors["accent_primary"])
-            self.gesture_toggle_btn.config(text="🖐️ Hand Gesture Mouse: ON", bg=self.colors["accent_primary"], fg="white")
+            self.gesture_toggle_btn.config(text="🖐️ Gesture: ON", bg=self.colors["accent_primary"], fg="white")
         else:
             self.gesture_status_var.set("🟥 Gesture: OFF")
             self.gesture_status_label.config(fg=self.colors["text_primary"])
-            self.gesture_toggle_btn.config(text="🖐️ Hand Gesture Mouse: OFF", bg=self.colors["bg_hover"], fg=self.colors["text_primary"])
+            self.gesture_toggle_btn.config(text="🖐️ Gesture: OFF", bg=self.colors["bg_hover"], fg=self.colors["text_primary"])
 
     def _on_gesture_frame(self, frame_bgr):
         """Called (from worker thread) with latest BGR frame. We enqueue UI update on main thread."""
