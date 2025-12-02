@@ -4,29 +4,31 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+import platform
+
+# Import theme configuration
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import theme_config
 
 class ModuleLauncherApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Jarvis - AI Control System")
-        self.root.minsize(1100, 750)
-        self.root.geometry("1200x800")
         
-        # Professional Dark Theme Palette
-        self.bg_dark = "#0d1117"
-        self.bg_secondary = "#161b22"
-        self.card_bg = "#1c2128"
-        self.card_hover = "#21262d"
-        self.accent_blue = "#58a6ff"
-        self.accent_purple = "#a371f7"
-        self.accent_green = "#3fb950"
-        self.text_primary = "#f0f6fc"
-        self.text_secondary = "#8b949e"
-        self.text_muted = "#6e7681"
-        self.border_dark = "#30363d"
-        self.border_subtle = "#21262d"
+        # DPI awareness (Windows) + Tk scaling
+        try:
+            if platform.system() == "Windows":
+                from ctypes import windll
+                windll.shcore.SetProcessDpiAwareness(1)
+            self.root.tk.call("tk", "scaling", 1.15)
+        except Exception:
+            pass
         
-        self.root.configure(bg=self.bg_dark)
+        # Load theme colors
+        self.current_theme = theme_config.get_current_theme()
+        self.colors = theme_config.get_theme_colors(self.current_theme)
+        
+        self.root.configure(bg=self.colors["bg_primary"])
         
         # Paths
         self.base_dir = Path(__file__).resolve().parent.parent
@@ -36,354 +38,264 @@ class ModuleLauncherApp:
         # Processes
         self.procs = {}
         
+        # Window sizing
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        ww, wh = int(sw * 0.7), int(sh * 0.8)
+        x, y = (sw - ww) // 2, (sh - wh) // 2
+        self.root.geometry(f"{ww}x{wh}+{x}+{y}")
+        self.root.minsize(1000, 700)
+        
         self._build_ui()
     
     def _build_ui(self):
-        # Main scrollable container
-        main_container = tk.Frame(self.root, bg=self.bg_dark)
-        main_container.pack(fill=tk.BOTH, expand=True)
+        # Setup ttk styles
+        self._setup_styles()
         
-        # Canvas with scrollbar
-        canvas = tk.Canvas(main_container, bg=self.bg_dark, highlightthickness=0, bd=0)
-        scrollbar = tk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=self.bg_dark)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        
-        def configure_canvas(event):
-            canvas.itemconfig(canvas_window, width=event.width)
-        
-        canvas.bind('<Configure>', configure_canvas)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Mouse wheel scrolling
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        # Content wrapper
-        content = tk.Frame(scrollable_frame, bg=self.bg_dark)
-        content.pack(fill=tk.BOTH, expand=True, padx=50, pady=40)
+        # Main container with padding (matching modules)
+        main_container = ttk.Frame(self.root, style='Dark.TFrame')
+        main_container.pack(fill='both', expand=True, padx=15, pady=15)
+        main_container.grid_rowconfigure(1, weight=1)
+        main_container.grid_columnconfigure(0, weight=1)
         
         # Build sections
-        self._build_header(content)
-        self._build_hero_section(content)
-        self._build_modules_section(content)
-        self._build_status_section(content)
-        self._build_footer(content)
+        self._build_header(main_container)
+        self._build_content(main_container)
+        self._build_footer(main_container)
+    
+    def _setup_styles(self):
+        """Setup ttk styles to match modules"""
+        style = ttk.Style()
+        style.theme_use("clam")
+        
+        # Frame styles
+        style.configure("Dark.TFrame", background=self.colors["bg_secondary"])
+        
+        # Label styles
+        style.configure("Dark.TLabel", background=self.colors["bg_secondary"], 
+                       foreground=self.colors["text_primary"], font=("Segoe UI", 10))
+        style.configure("Title.TLabel", background=self.colors["bg_secondary"], 
+                       foreground=self.colors["text_primary"], font=("Segoe UI", 18, "bold"))
     
     def _build_header(self, parent):
-        """Modern header with branding"""
-        header_bg = tk.Frame(parent, bg=self.bg_dark)
-        header_bg.pack(fill=tk.X, pady=(0, 40))
+        """Modern header matching module design"""
+        header = tk.Frame(parent, bg=self.colors["bg_secondary"], bd=0, relief=tk.FLAT, height=80)
+        header.grid(row=0, column=0, sticky="nsew")
+        header.grid_propagate(False)
+        header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(1, weight=0)
         
-        # Logo and brand
-        brand_frame = tk.Frame(header_bg, bg=self.bg_dark)
-        brand_frame.pack(anchor="center")
+        # Brand section
+        brand_frame = tk.Frame(header, bg=self.colors["bg_secondary"])
+        brand_frame.grid(row=0, column=0, padx=20, pady=20)
         
         # Icon
         icon_label = tk.Label(
             brand_frame,
             text="◉",
-            font=("Segoe UI", 56, "bold"),
-            bg=self.bg_dark,
-            fg=self.accent_blue
+            font=("Segoe UI", 42, "bold"),
+            bg=self.colors["bg_secondary"],
+            fg=self.colors["accent_primary"]
         )
-        icon_label.pack(side=tk.LEFT, padx=(0, 20))
+        icon_label.pack(side=tk.LEFT, padx=(0, 15))
         
         # Text branding
-        text_brand = tk.Frame(brand_frame, bg=self.bg_dark)
+        text_brand = tk.Frame(brand_frame, bg=self.colors["bg_secondary"])
         text_brand.pack(side=tk.LEFT)
         
-        tk.Label(
+        title_label = tk.Label(
             text_brand,
-            text="J A R V I S",
-            font=("Segoe UI", 48, "bold"),
-            bg=self.bg_dark,
-            fg=self.text_primary
-        ).pack(anchor="w")
-        
-        tk.Label(
-            text_brand,
-            text="AI-Powered Multimodal Control System",
-            font=("Segoe UI", 12),
-            bg=self.bg_dark,
-            fg=self.text_secondary
-        ).pack(anchor="w", pady=(2, 0))
-    
-    def _build_hero_section(self, parent):
-        """Hero section with project overview"""
-        hero = tk.Frame(parent, bg=self.card_bg, bd=0)
-        hero.pack(fill=tk.X, pady=(0, 35))
-        
-        # Add subtle border effect
-        border_frame = tk.Frame(hero, bg=self.border_dark, height=1)
-        border_frame.pack(fill=tk.X, side=tk.TOP)
-        
-        inner = tk.Frame(hero, bg=self.card_bg)
-        inner.pack(fill=tk.X, padx=40, pady=35)
-        
-        # Title
-        tk.Label(
-            inner,
-            text="Welcome to the Future of Interaction",
-            font=("Segoe UI", 24, "bold"),
-            bg=self.card_bg,
-            fg=self.text_primary
-        ).pack(anchor="w", pady=(0, 15))
-        
-        # Description
-        desc_text = (
-            "Jarvis revolutionizes how you interact with your computer through advanced AI technology. "
-            "Experience seamless control using facial emotions, hand gestures, and voice commands. "
-            "Built with privacy in mind—all processing happens locally on your device."
+            text="JARVIS",
+            font=("Segoe UI", 32, "bold"),
+            bg=self.colors["bg_secondary"],
+            fg=self.colors["text_primary"]
         )
+        title_label.pack(anchor="w")
         
-        tk.Label(
-            inner,
-            text=desc_text,
+        subtitle_label = tk.Label(
+            text_brand,
+            text="AI Control System",
             font=("Segoe UI", 11),
-            bg=self.card_bg,
-            fg=self.text_secondary,
-            justify=tk.LEFT,
-            wraplength=1000
-        ).pack(anchor="w", pady=(0, 25))
+            bg=self.colors["bg_secondary"],
+            fg=self.colors["text_secondary"]
+        )
+        subtitle_label.pack(anchor="w", pady=(2, 0))
         
-        # Feature badges
-        badges_frame = tk.Frame(inner, bg=self.card_bg)
-        badges_frame.pack(fill=tk.X)
+        # Theme switcher button
+        theme_btn_frame = tk.Frame(header, bg=self.colors["bg_secondary"])
+        theme_btn_frame.grid(row=0, column=1, sticky="e", padx=20, pady=20)
         
-        badges = [
-            ("⚡", "Real-time", "Instant AI processing"),
-            ("🔒", "Secure", "100% local & private"),
-            ("🎯", "Accurate", "Advanced ML models"),
-            ("🌐", "Universal", "Works on any PC")
-        ]
+        theme_icon = "🌙" if self.current_theme == "dark" else "☀️"
+        theme_text = "Light Mode" if self.current_theme == "dark" else "Dark Mode"
         
-        for icon, title, desc in badges:
-            self._create_badge(badges_frame, icon, title, desc)
+        self.theme_btn = tk.Button(
+            theme_btn_frame,
+            text=f"{theme_icon} {theme_text}",
+            command=self.toggle_theme_mode,
+            bg=self.colors["accent_secondary"],
+            fg=self.colors["text_primary"],
+            activebackground=self.colors["accent_primary"],
+            activeforeground=self.colors["text_primary"],
+            relief=tk.FLAT,
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2",
+            bd=0,
+            padx=15,
+            pady=8
+        )
+        self.theme_btn.pack()
     
-    def _create_badge(self, parent, icon, title, description):
-        """Create feature badge"""
-        badge = tk.Frame(parent, bg=self.bg_secondary, bd=0)
-        badge.pack(side=tk.LEFT, padx=(0, 15), pady=5)
+    def _build_content(self, parent):
+        """Main content area with module cards"""
+        content = ttk.Frame(parent, style='Dark.TFrame')
+        content.grid(row=1, column=0, sticky="nsew", pady=(20, 0))
+        content.grid_rowconfigure(1, weight=1)
+        content.grid_columnconfigure(0, weight=1)
         
-        inner = tk.Frame(badge, bg=self.bg_secondary)
-        inner.pack(padx=20, pady=15)
+        # Welcome section
+        welcome_card = tk.Frame(content, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        welcome_card.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 20))
         
-        tk.Label(
-            inner,
-            text=icon,
-            font=("Segoe UI Emoji", 24),
-            bg=self.bg_secondary,
-            fg=self.accent_blue
-        ).pack(side=tk.LEFT, padx=(0, 12))
+        welcome_inner = tk.Frame(welcome_card, bg=self.colors["bg_tertiary"])
+        welcome_inner.pack(fill=tk.X, padx=20, pady=20)
         
-        text_frame = tk.Frame(inner, bg=self.bg_secondary)
-        text_frame.pack(side=tk.LEFT)
+        welcome_title = tk.Label(
+            welcome_inner,
+            text="Welcome to Jarvis",
+            font=("Segoe UI", 16, "bold"),
+            bg=self.colors["bg_tertiary"],
+            fg=self.colors["text_primary"]
+        )
+        welcome_title.pack(anchor="w", pady=(0, 8))
         
-        tk.Label(
-            text_frame,
-            text=title,
-            font=("Segoe UI", 11, "bold"),
-            bg=self.bg_secondary,
-            fg=self.text_primary
-        ).pack(anchor="w")
+        welcome_desc = tk.Label(
+            welcome_inner,
+            text="Experience seamless computer control through emotion recognition, hand gestures, and voice commands. Choose a module below to get started.",
+            font=("Segoe UI", 10),
+            bg=self.colors["bg_tertiary"],
+            fg=self.colors["text_secondary"],
+            wraplength=900,
+            justify=tk.LEFT
+        )
+        welcome_desc.pack(anchor="w")
         
-        tk.Label(
-            text_frame,
-            text=description,
-            font=("Segoe UI", 9),
-            bg=self.bg_secondary,
-            fg=self.text_muted
-        ).pack(anchor="w")
-    
-    def _build_modules_section(self, parent):
-        """Control modules section"""
-        # Section header
-        header_frame = tk.Frame(parent, bg=self.bg_dark)
-        header_frame.pack(fill=tk.X, pady=(10, 25))
-        
-        tk.Label(
-            header_frame,
-            text="Control Modules",
-            font=("Segoe UI", 26, "bold"),
-            bg=self.bg_dark,
-            fg=self.text_primary
-        ).pack(side=tk.LEFT)
-        
-        tk.Label(
-            header_frame,
-            text="Choose a module to launch",
-            font=("Segoe UI", 11),
-            bg=self.bg_dark,
-            fg=self.text_secondary
-        ).pack(side=tk.LEFT, padx=(15, 0))
+        # Modules section
+        modules_header = ttk.Label(content, text="Control Modules", style='Title.TLabel')
+        modules_header.grid(row=1, column=0, sticky="w", pady=(0, 15))
         
         # Modules grid
-        modules_grid = tk.Frame(parent, bg=self.bg_dark)
-        modules_grid.pack(fill=tk.BOTH, expand=True)
-        modules_grid.columnconfigure(0, weight=1, uniform="modules")
-        modules_grid.columnconfigure(1, weight=1, uniform="modules")
+        modules_frame = ttk.Frame(content, style='Dark.TFrame')
+        modules_frame.grid(row=2, column=0, sticky="nsew")
+        modules_frame.grid_rowconfigure(0, weight=1)
+        modules_frame.grid_columnconfigure(0, weight=1)
+        modules_frame.grid_columnconfigure(1, weight=1)
         
         # Module 1: Emotion & Gesture
-        self._create_premium_card(
-            modules_grid,
+        self._create_module_card(
+            modules_frame,
             row=0, col=0,
             icon="🎭",
             title="Emotion & Gesture Control",
-            subtitle="Visual AI Recognition",
-            description=(
-                "Transform your facial expressions and hand movements into computer commands. "
-                "Powered by MediaPipe and custom-trained ML models for accurate emotion detection."
-            ),
+            description="Control your computer through facial expressions and hand movements with real-time AI recognition.",
             features=[
-                "7 emotion states recognition",
-                "Real-time hand tracking",
-                "Gesture-based navigation",
+                "Emotion state detection",
+                "Hand gesture navigation",
                 "Touchless interaction"
             ],
-            requirements="Requires: Webcam",
-            button_text="Launch Module",
-            accent_color=self.accent_blue,
+            button_text="Launch Emotion Module",
+            accent_color=self.colors["accent_emotion"],
             command=self.launch_emotion
         )
         
         # Module 2: Voice Control
-        self._create_premium_card(
-            modules_grid,
+        self._create_module_card(
+            modules_frame,
             row=0, col=1,
             icon="🎤",
             title="Voice Command Control",
-            subtitle="Speech AI Recognition",
-            description=(
-                "Control your computer hands-free with natural voice commands. "
-                "Features wake word detection and continuous listening for seamless interaction."
-            ),
+            description="Control your computer hands-free with natural voice commands and wake word detection.",
             features=[
-                "Custom wake word support",
+                "Wake word activation",
                 "Natural language commands",
-                "Background listening mode",
-                "Multi-language support"
+                "Background listening mode"
             ],
-            requirements="Requires: Microphone",
-            button_text="Launch Module",
-            accent_color=self.accent_purple,
+            button_text="Launch Voice Module",
+            accent_color=self.colors["accent_speech"],
             command=self.launch_speech
         )
     
-    def _create_premium_card(self, parent, row, col, icon, title, subtitle, 
-                            description, features, requirements, button_text, 
-                            accent_color, command):
-        """Create premium module card"""
-        # Card container
-        card_container = tk.Frame(parent, bg=self.bg_dark)
-        card_container.grid(row=row, column=col, sticky="nsew", padx=(0, 20 if col == 0 else 0), pady=10)
+    def _create_module_card(self, parent, row, col, icon, title, description, 
+                           features, button_text, accent_color, command):
+        """Create clean module card matching module design"""
+        # Card container with spacing
+        card_padding = 10 if col == 0 else 0
+        card = tk.Frame(parent, bg=self.colors["bg_tertiary"], bd=1, relief=tk.SOLID)
+        card.grid(row=row, column=col, sticky="nsew", padx=(0, card_padding), pady=5)
         
-        card = tk.Frame(
-            card_container,
-            bg=self.card_bg,
-            bd=0,
-            highlightbackground=self.border_dark,
-            highlightthickness=1
-        )
-        card.pack(fill=tk.BOTH, expand=True)
+        # Content
+        content = tk.Frame(card, bg=self.colors["bg_tertiary"])
+        content.pack(fill=tk.BOTH, expand=True, padx=25, pady=25)
         
-        # Content padding
-        content = tk.Frame(card, bg=self.card_bg)
-        content.pack(fill=tk.BOTH, expand=True, padx=30, pady=30)
+        # Header with icon
+        header = tk.Frame(content, bg=self.colors["bg_tertiary"])
+        header.pack(fill=tk.X, pady=(0, 15))
         
-        # Header section
-        header = tk.Frame(content, bg=self.card_bg)
-        header.pack(fill=tk.X, pady=(0, 20))
-        
-        # Icon circle
-        icon_frame = tk.Frame(header, bg=self.bg_secondary, width=70, height=70)
-        icon_frame.pack(side=tk.LEFT, padx=(0, 18))
-        icon_frame.pack_propagate(False)
-        
+        # Icon
         tk.Label(
-            icon_frame,
+            header,
             text=icon,
-            font=("Segoe UI Emoji", 32),
-            bg=self.bg_secondary,
+            font=("Segoe UI Emoji", 48),
+            bg=self.colors["bg_tertiary"],
             fg=accent_color
-        ).place(relx=0.5, rely=0.5, anchor="center")
+        ).pack(side=tk.LEFT, padx=(0, 15))
         
         # Title section
-        title_section = tk.Frame(header, bg=self.card_bg)
-        title_section.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        title_section = tk.Frame(header, bg=self.colors["bg_tertiary"])
+        title_section.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         tk.Label(
             title_section,
             text=title,
-            font=("Segoe UI", 18, "bold"),
-            bg=self.card_bg,
-            fg=self.text_primary
-        ).pack(anchor="w")
-        
-        tk.Label(
-            title_section,
-            text=subtitle,
-            font=("Segoe UI", 10),
-            bg=self.card_bg,
-            fg=accent_color
-        ).pack(anchor="w", pady=(2, 0))
+            font=("Segoe UI", 16, "bold"),
+            bg=self.colors["bg_tertiary"],
+            fg=self.colors["text_primary"],
+            anchor="w"
+        ).pack(fill=tk.X)
         
         # Description
         tk.Label(
             content,
             text=description,
-            font=("Segoe UI", 10),
-            bg=self.card_bg,
-            fg=self.text_secondary,
+            font=("Segoe UI", 9),
+            bg=self.colors["bg_tertiary"],
+            fg=self.colors["text_secondary"],
             justify=tk.LEFT,
-            wraplength=420
-        ).pack(fill=tk.X, pady=(0, 20))
+            wraplength=400,
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 15))
         
-        # Features list
-        features_container = tk.Frame(content, bg=self.card_bg)
-        features_container.pack(fill=tk.X, pady=(0, 20))
+        # Features
+        features_frame = tk.Frame(content, bg=self.colors["bg_tertiary"])
+        features_frame.pack(fill=tk.X, pady=(0, 20))
         
         for feature in features:
-            feature_row = tk.Frame(features_container, bg=self.card_bg)
-            feature_row.pack(fill=tk.X, pady=4)
+            feature_row = tk.Frame(features_frame, bg=self.colors["bg_tertiary"])
+            feature_row.pack(fill=tk.X, pady=3)
             
             tk.Label(
                 feature_row,
                 text="▸",
-                font=("Segoe UI", 12, "bold"),
-                bg=self.card_bg,
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors["bg_tertiary"],
                 fg=accent_color
-            ).pack(side=tk.LEFT, padx=(0, 10))
+            ).pack(side=tk.LEFT, padx=(0, 8))
             
             tk.Label(
                 feature_row,
                 text=feature,
-                font=("Segoe UI", 10),
-                bg=self.card_bg,
-                fg=self.text_secondary
+                font=("Segoe UI", 9),
+                bg=self.colors["bg_tertiary"],
+                fg=self.colors["text_secondary"]
             ).pack(side=tk.LEFT)
-        
-        # Requirements
-        req_frame = tk.Frame(content, bg=self.bg_secondary)
-        req_frame.pack(fill=tk.X, pady=(10, 20))
-        
-        tk.Label(
-            req_frame,
-            text=requirements,
-            font=("Segoe UI", 9),
-            bg=self.bg_secondary,
-            fg=self.text_muted
-        ).pack(padx=12, pady=8)
         
         # Launch button
         btn = tk.Button(
@@ -395,119 +307,83 @@ class ModuleLauncherApp:
             activebackground=accent_color,
             activeforeground="#000000",
             relief=tk.FLAT,
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 10, "bold"),
             cursor="hand2",
             bd=0
         )
-        btn.pack(fill=tk.X, ipady=12)
+        btn.pack(fill=tk.X, ipady=10)
         
         # Hover effects
         def on_enter(e):
-            btn.config(bg=self._lighten_color(accent_color))
-            card.config(bg=self.card_hover, highlightbackground=accent_color)
-            content.config(bg=self.card_hover)
-            header.config(bg=self.card_hover)
-            title_section.config(bg=self.card_hover)
-            features_container.config(bg=self.card_hover)
-            for child in features_container.winfo_children():
-                child.config(bg=self.card_hover)
+            card.config(bg=self.colors["bg_hover"])
+            content.config(bg=self.colors["bg_hover"])
+            header.config(bg=self.colors["bg_hover"])
+            title_section.config(bg=self.colors["bg_hover"])
+            features_frame.config(bg=self.colors["bg_hover"])
+            for child in features_frame.winfo_children():
+                child.config(bg=self.colors["bg_hover"])
                 for subchild in child.winfo_children():
                     if isinstance(subchild, tk.Label):
-                        subchild.config(bg=self.card_hover)
+                        subchild.config(bg=self.colors["bg_hover"])
         
         def on_leave(e):
-            btn.config(bg=accent_color)
-            card.config(bg=self.card_bg, highlightbackground=self.border_dark)
-            content.config(bg=self.card_bg)
-            header.config(bg=self.card_bg)
-            title_section.config(bg=self.card_bg)
-            features_container.config(bg=self.card_bg)
-            for child in features_container.winfo_children():
-                child.config(bg=self.card_bg)
+            card.config(bg=self.colors["bg_tertiary"])
+            content.config(bg=self.colors["bg_tertiary"])
+            header.config(bg=self.colors["bg_tertiary"])
+            title_section.config(bg=self.colors["bg_tertiary"])
+            features_frame.config(bg=self.colors["bg_tertiary"])
+            for child in features_frame.winfo_children():
+                child.config(bg=self.colors["bg_tertiary"])
                 for subchild in child.winfo_children():
                     if isinstance(subchild, tk.Label):
-                        subchild.config(bg=self.card_bg)
+                        subchild.config(bg=self.colors["bg_tertiary"])
         
         card.bind("<Enter>", on_enter)
         card.bind("<Leave>", on_leave)
         btn.bind("<Enter>", on_enter)
         btn.bind("<Leave>", on_leave)
     
-    def _lighten_color(self, hex_color):
-        """Lighten a hex color"""
-        hex_color = hex_color.lstrip('#')
-        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        lighter = tuple(min(255, int(c * 1.2)) for c in rgb)
-        return f"#{lighter[0]:02x}{lighter[1]:02x}{lighter[2]:02x}"
-    
-    def _build_status_section(self, parent):
-        """Status bar section"""
-        status_container = tk.Frame(parent, bg=self.card_bg, bd=0)
-        status_container.pack(fill=tk.X, pady=(35, 0))
+    def _build_footer(self, parent):
+        """Footer section matching module design"""
+        footer = tk.Frame(parent, bg=self.colors["bg_secondary"], bd=0, relief=tk.FLAT, height=50)
+        footer.grid(row=2, column=0, sticky="nsew")
+        footer.grid_propagate(False)
+        footer.grid_columnconfigure(0, weight=1)
         
-        # Border
-        tk.Frame(status_container, bg=self.border_dark, height=1).pack(fill=tk.X, side=tk.TOP)
-        
-        inner = tk.Frame(status_container, bg=self.card_bg)
-        inner.pack(fill=tk.X, padx=30, pady=20)
-        
-        # Status indicator
-        indicator_frame = tk.Frame(inner, bg=self.card_bg)
-        indicator_frame.pack(side=tk.LEFT)
+        # Status section
+        status_frame = tk.Frame(footer, bg=self.colors["bg_secondary"])
+        status_frame.pack(side=tk.LEFT, pady=15)
         
         self.status_dot = tk.Label(
-            indicator_frame,
+            status_frame,
             text="●",
-            font=("Segoe UI", 16),
-            bg=self.card_bg,
-            fg=self.accent_green
+            font=("Segoe UI", 14),
+            bg=self.colors["bg_secondary"],
+            fg=self.colors["accent_primary"]
         )
-        self.status_dot.pack(side=tk.LEFT, padx=(0, 10))
-        
-        tk.Label(
-            indicator_frame,
-            text="System Status:",
-            font=("Segoe UI", 10, "bold"),
-            bg=self.card_bg,
-            fg=self.text_primary
-        ).pack(side=tk.LEFT, padx=(0, 10))
+        self.status_dot.pack(side=tk.LEFT, padx=(0, 8))
         
         self.status = tk.Label(
-            indicator_frame,
-            text="Ready to launch",
-            font=("Segoe UI", 10),
-            bg=self.card_bg,
-            fg=self.text_secondary
+            status_frame,
+            text="System Ready",
+            font=("Segoe UI", 9),
+            bg=self.colors["bg_secondary"],
+            fg=self.colors["text_secondary"]
         )
         self.status.pack(side=tk.LEFT)
-    
-    def _build_footer(self, parent):
-        """Footer section"""
-        footer = tk.Frame(parent, bg=self.bg_dark)
-        footer.pack(fill=tk.X, pady=(35, 20))
         
-        # Separator line
-        tk.Frame(footer, bg=self.border_subtle, height=1).pack(fill=tk.X, pady=(0, 25))
-        
-        # Info text
+        # Version info
         tk.Label(
             footer,
-            text="💡 Make sure your webcam and microphone are properly connected before launching modules",
+            text="Jarvis v1.0",
             font=("Segoe UI", 9),
-            bg=self.bg_dark,
-            fg=self.text_muted
-        ).pack(pady=(0, 10))
-        
-        tk.Label(
-            footer,
-            text="Jarvis v1.0  •  Multimodal AI Control System  •  Built for seamless interaction",
-            font=("Segoe UI", 9),
-            bg=self.bg_dark,
-            fg=self.text_muted
-        ).pack()
+            bg=self.colors["bg_secondary"],
+            fg=self.colors["text_muted"]
+        ).pack(side=tk.RIGHT, pady=15)
     
-    # ---------- Actions (UNCHANGED) ----------
+    # ---------- Module Launch Actions ----------
     def launch_emotion(self):
+        """Launch emotion & gesture module"""
         try:
             script = self.base_dir / "emotion_gesture" / "fullemotionmodule.py"
             if not script.exists():
@@ -523,15 +399,16 @@ class ModuleLauncherApp:
                 env=self._merged_env()
             )
             self.procs["emotion"] = proc
-            self._set_status("Emotion & Gesture Control active", "#3fb950")
+            self._set_status("Emotion module launched", self.colors["accent_emotion"])
             
             # Close the launcher after successful module launch
             self.root.after(500, self.root.destroy)
         except Exception as e:
-            self._set_status("Failed to launch Emotion module", "#f85149")
+            self._set_status("Failed to launch module", "#f85149")
             messagebox.showerror("Launch Error", f"Error: {str(e)}")
 
     def launch_speech(self):
+        """Launch voice command module"""
         try:
             script = self.base_dir / "speech_control" / "run.py"
             if not script.exists():
@@ -547,15 +424,29 @@ class ModuleLauncherApp:
                 env=self._merged_env()
             )
             self.procs["speech"] = proc
-            self._set_status("Voice Command Control active", "#3fb950")
+            self._set_status("Voice module launched", self.colors["accent_speech"])
             
             # Close the launcher after successful module launch
             self.root.after(500, self.root.destroy)
         except Exception as e:
-            self._set_status("Failed to launch Speech module", "#f85149")
+            self._set_status("Failed to launch module", "#f85149")
             messagebox.showerror("Launch Error", f"Error: {str(e)}")
 
     # ---------- Helpers ----------
+    def toggle_theme_mode(self):
+        """Toggle between dark and light theme"""
+        new_theme = theme_config.toggle_theme()
+        self.current_theme = new_theme
+        self.colors = theme_config.get_theme_colors(new_theme)
+        
+        # Destroy all children and rebuild UI
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        # Rebuild UI
+        self.root.configure(bg=self.colors["bg_primary"])
+        self._build_ui()
+    
     def _merged_env(self):
         env = os.environ.copy()
         env["PYTHONPATH"] = str(self.base_dir) + os.pathsep + env.get("PYTHONPATH", "")

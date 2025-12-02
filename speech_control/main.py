@@ -13,7 +13,12 @@ import time
 from datetime import datetime
 import os
 import socket
+import sys
 from pathlib import Path
+
+# Import theme configuration
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from launcher import theme_config
 
 # Hand-gesture stack
 import cv2
@@ -42,21 +47,9 @@ class ModernDarkSpeechApp:
         except Exception:
             pass
 
-        # Theme palette (matching emotion module)
-        self.colors = {
-            "bg_primary": "#1a1a1a",
-            "bg_secondary": "#1a1a1a",
-            "bg_tertiary": "#2a2a2a",
-            "bg_hover": "#333333",
-            "accent_primary": "#238636",
-            "accent_secondary": "#2a4a7c",
-            "accent_danger": "#da3633",
-            "accent_warning": "#fb8500",
-            "text_primary": "#ffffff",
-            "text_secondary": "#c9d1d9",
-            "text_muted": "#8b949e",
-            "border": "#30363d",
-        }
+        # Theme configuration
+        self.current_theme = theme_config.get_current_theme()
+        self.colors = theme_config.get_theme_colors()
 
         # App state
         self.current_tab = "control"

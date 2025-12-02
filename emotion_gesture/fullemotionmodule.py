@@ -18,7 +18,12 @@ import hashlib
 from datetime import datetime, timedelta
 from collections import Counter
 from pathlib import Path
+import sys
 warnings.filterwarnings('ignore')
+
+# Import theme configuration
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from launcher import theme_config
 
 # --- Model / features (your pipeline) ---
 import joblib
@@ -225,6 +230,10 @@ class EmotionRecognitionApp:
     def __init__(self, root):
         self.root = root
 
+        # --- Theme configuration ---
+        self.current_theme = theme_config.get_current_theme()
+        self.colors = theme_config.get_theme_colors()
+
         # --- App state ---
         self.current_emotion = "neutral"
         self.emotion_confidence = 0.0
@@ -392,19 +401,19 @@ class EmotionRecognitionApp:
 
     def setup_ui(self):
         self.root.title("Emotion Recognition + Gesture Control Assistant")
-        self.root.configure(bg='#1a1a1a')
+        self.root.configure(bg=self.colors['bg_primary'])
         self.root.minsize(1000, 700)
 
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure('Dark.TFrame', background='#1a1a1a')
-        style.configure('Dark.TLabel', background='#1a1a1a', foreground='#ffffff', font=('Segoe UI', 10))
-        style.configure('Title.TLabel', background='#1a1a1a', foreground='#ffffff', font=('Segoe UI', 18, 'bold'))
-        style.configure('Emotion.TLabel', background='#1a1a1a', foreground='#00ff88', font=('Segoe UI', 16, 'bold'))
-        style.configure('Dark.TButton', background='#333333', foreground='#ffffff', font=('Segoe UI', 9), padding=8)
-        style.map('Dark.TButton', background=[('active', '#444444'), ('pressed', '#555555')])
-        style.configure('Gesture.TButton', background='#2a4a7c', foreground='#ffffff', font=('Segoe UI', 9), padding=8)
-        style.map('Gesture.TButton', background=[('active', '#3a5a8c'), ('pressed', '#4a6a9c')])
+        style.configure('Dark.TFrame', background=self.colors['bg_primary'])
+        style.configure('Dark.TLabel', background=self.colors['bg_primary'], foreground=self.colors['text_primary'], font=('Segoe UI', 10))
+        style.configure('Title.TLabel', background=self.colors['bg_primary'], foreground=self.colors['text_primary'], font=('Segoe UI', 18, 'bold'))
+        style.configure('Emotion.TLabel', background=self.colors['bg_primary'], foreground=self.colors['accent_primary'], font=('Segoe UI', 16, 'bold'))
+        style.configure('Dark.TButton', background=self.colors['bg_tertiary'], foreground=self.colors['text_primary'], font=('Segoe UI', 9), padding=8)
+        style.map('Dark.TButton', background=[('active', self.colors['bg_secondary']), ('pressed', self.colors['bg_tertiary'])])
+        style.configure('Gesture.TButton', background=self.colors['accent_secondary'], foreground=self.colors['text_primary'], font=('Segoe UI', 9), padding=8)
+        style.map('Gesture.TButton', background=[('active', self.colors['accent_secondary']), ('pressed', self.colors['accent_secondary'])])
 
         # Main container
         main_container = ttk.Frame(self.root, style='Dark.TFrame')
