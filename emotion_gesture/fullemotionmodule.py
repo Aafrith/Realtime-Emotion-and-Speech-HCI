@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
@@ -16,7 +16,7 @@ import json
 import csv
 import hashlib
 from datetime import datetime, timedelta
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 import sys
 warnings.filterwarnings('ignore')
@@ -24,6 +24,9 @@ warnings.filterwarnings('ignore')
 # Import theme configuration
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from launcher import theme_config
+
+# Import advanced analytics
+from advanced_analytics import AdvancedAnalytics, ReportGenerator, REPORTLAB_AVAILABLE, PANDAS_AVAILABLE
 
 # --- Model / features (your pipeline) ---
 import joblib
@@ -282,6 +285,17 @@ class EmotionRecognitionApp:
         self.daily_happy_spikes = 0
         self.calm_streak_start = None
         self.last_analytics_check = None
+        
+        # Advanced analytics engine
+        self.analytics = AdvancedAnalytics()
+        
+        # Advanced analytics
+        self.emotion_transitions = defaultdict(lambda: defaultdict(int))
+        self.hourly_emotions = defaultdict(lambda: defaultdict(int))
+        self.activity_log = []
+        self.stress_indicators = []
+        self.productivity_score = 0.0
+        self.wellbeing_score = 0.0
 
         # Emotion actions (same as before)
         self.emotion_actions = {
@@ -469,6 +483,14 @@ class EmotionRecognitionApp:
             command=self.show_analytics_panel
         )
         self.analytics_btn.pack(side='left', padx=(0, 5))
+        
+        self.report_btn = ttk.Button(
+            user_controls_frame,
+            text="📄 Download Report",
+            style='Gesture.TButton',
+            command=self.generate_report_dialog
+        )
+        self.report_btn.pack(side='left', padx=(0, 5))
         
         self.logout_btn = ttk.Button(
             user_controls_frame,
@@ -1664,9 +1686,14 @@ class EmotionRecognitionApp:
             log_entry = {
                 'timestamp': datetime.now().isoformat(),
                 'emotion': emotion,
-                'confidence': confidence
+                'confidence': confidence,
+                'session_id': id(self.session_start_time)
             }
             self.emotion_log.append(log_entry)
+            
+            # Track using analytics engine
+            self.analytics.track_hourly_emotion(emotion)
+            self.analytics.add_stress_indicator(emotion, confidence)
             
             # Save every 10 entries to avoid too many writes
             if len(self.emotion_log) % 10 == 0:
@@ -1681,6 +1708,10 @@ class EmotionRecognitionApp:
     
     def _track_emotion_change(self, new_emotion, confidence):
         """Track emotion changes for streaks and spikes"""
+        # Track transitions using analytics engine
+        if self.current_emotion and self.current_emotion != new_emotion:
+            self.analytics.track_emotion_transition(self.current_emotion, new_emotion)
+        
         # Track happy spikes
         if new_emotion == 'happy' and confidence > 0.7:
             self.daily_happy_spikes += 1
@@ -1828,10 +1859,20 @@ class EmotionRecognitionApp:
         self.goals_frame = ttk.Frame(self.analytics_notebook, style='Dark.TFrame', padding=15)
         self.analytics_notebook.add(self.goals_frame, text="🏆 Achievements")
         
+        # Tab 4: Advanced Analytics
+        self.advanced_frame = ttk.Frame(self.analytics_notebook, style='Dark.TFrame', padding=15)
+        self.analytics_notebook.add(self.advanced_frame, text="🔬 Advanced Analytics")
+        
+        # Tab 5: Patterns & Insights
+        self.patterns_frame = ttk.Frame(self.analytics_notebook, style='Dark.TFrame', padding=15)
+        self.analytics_notebook.add(self.patterns_frame, text="🧠 Patterns & Insights")
+        
         # Populate data
         self._populate_today_stats(self.today_frame)
         self._populate_week_stats(self.week_frame)
         self._populate_goals_stats(self.goals_frame)
+        self._populate_advanced_analytics(self.advanced_frame)
+        self._populate_patterns_insights(self.patterns_frame)
         
         # Switch to analytics tab
         self.main_notebook.select(self.analytics_tab)
@@ -2129,6 +2170,397 @@ class EmotionRecognitionApp:
                         style='Dark.TLabel',
                         font=('Segoe UI', 10)
                     ).pack(anchor='w', padx=20, pady=5)
+    
+    def _populate_advanced_analytics(self, parent):
+        """Populate advanced analytics tab"""
+        # Clear existing widgets
+        for widget in parent.winfo_children():
+            widget.destroy()
+        
+        # Scrollable frame
+        canvas = tk.Canvas(parent, bg=self.colors['bg_primary'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style='Dark.TFrame')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Title
+        ttk.Label(
+            scrollable_frame,
+            text="🔬 Advanced Analytics",
+            style='Title.TLabel'
+        ).pack(pady=(0, 20))
+        
+        if not self.emotion_log:
+            ttk.Label(
+                scrollable_frame,
+                text="No emotion data yet. Start detection to see analytics!",
+                style='Dark.TLabel',
+                font=('Segoe UI', 11)
+            ).pack(pady=20)
+            return
+        
+        # Wellbeing Score
+        wellbeing_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+        wellbeing_frame.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            wellbeing_frame,
+            text="💚 Wellbeing Score",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(anchor='w')
+        
+        wellbeing = self.analytics.calculate_wellbeing_score(self.emotion_log)
+        score_color = self.analytics.get_score_color(wellbeing)
+        
+        ttk.Label(
+            wellbeing_frame,
+            text=f"{wellbeing:.1f}/100",
+            style='Emotion.TLabel',
+            foreground=score_color
+        ).pack(anchor='w', padx=20)
+        
+        # Progress bar
+        self._create_progress_bar(wellbeing_frame, wellbeing, score_color)
+        
+        ttk.Label(
+            wellbeing_frame,
+            text=self.analytics.get_wellbeing_interpretation(wellbeing),
+            style='Dark.TLabel',
+            font=('Segoe UI', 9, 'italic')
+        ).pack(anchor='w', padx=20, pady=(5, 0))
+        
+        # Productivity Score
+        productivity_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+        productivity_frame.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            productivity_frame,
+            text="⚡ Productivity Index",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(anchor='w')
+        
+        productivity = self.analytics.calculate_productivity_score(self.emotion_log)
+        prod_color = self.analytics.get_score_color(productivity)
+        
+        ttk.Label(
+            productivity_frame,
+            text=f"{productivity:.1f}/100",
+            style='Emotion.TLabel',
+            foreground=prod_color
+        ).pack(anchor='w', padx=20)
+        
+        self._create_progress_bar(productivity_frame, productivity, prod_color)
+        
+        if productivity >= 70:
+            ttk.Label(
+                productivity_frame,
+                text="Excellent! You're in a great state for focused work.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 9, 'italic')
+            ).pack(anchor='w', padx=20, pady=(5, 0))
+        elif productivity < 40:
+            ttk.Label(
+                productivity_frame,
+                text="Consider taking a short break to reset.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 9, 'italic')
+            ).pack(anchor='w', padx=20, pady=(5, 0))
+        
+        # Stress Indicators
+        stress_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+        stress_frame.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            stress_frame,
+            text="⚠️ Stress Indicators (Last 24h)",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(anchor='w')
+        
+        stress_count = self.analytics.get_recent_stress_count(24)
+        stress_level = "Low" if stress_count < 5 else "Moderate" if stress_count < 15 else "High"
+        stress_color = "#00ff88" if stress_count < 5 else "#ffaa00" if stress_count < 15 else "#ff4444"
+        
+        ttk.Label(
+            stress_frame,
+            text=f"Count: {stress_count} | Status: {stress_level}",
+            style='Dark.TLabel',
+            font=('Segoe UI', 10),
+            foreground=stress_color
+        ).pack(anchor='w', padx=20)
+        
+        if stress_count >= 15:
+            ttk.Label(
+                stress_frame,
+                text="⚠️ High stress detected. Try breathing exercises or meditation.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 9, 'italic'),
+                foreground='#ff4444'
+            ).pack(anchor='w', padx=20, pady=(5, 0))
+        elif stress_count < 5:
+            ttk.Label(
+                stress_frame,
+                text="✓ Great! You're managing stress well.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 9, 'italic'),
+                foreground='#00ff88'
+            ).pack(anchor='w', padx=20, pady=(5, 0))
+        
+        # Emotion Stability
+        stability_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+        stability_frame.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            stability_frame,
+            text="🎯 Emotional Stability",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(anchor='w')
+        
+        stability = self.analytics.calculate_stability_score(self.emotion_log)
+        stability_color = self.analytics.get_score_color(stability)
+        
+        ttk.Label(
+            stability_frame,
+            text=f"{stability:.1f}/100",
+            style='Emotion.TLabel',
+            foreground=stability_color
+        ).pack(anchor='w', padx=20)
+        
+        self._create_progress_bar(stability_frame, stability, stability_color)
+        
+        if stability > 70:
+            ttk.Label(
+                stability_frame,
+                text="Excellent emotional stability!",
+                style='Dark.TLabel',
+                font=('Segoe UI', 9, 'italic')
+            ).pack(anchor='w', padx=20, pady=(5, 0))
+        elif stability < 40:
+            ttk.Label(
+                stability_frame,
+                text="Your emotions have been fluctuating. Consider a calming routine.",
+                style='Dark.TLabel',
+                font=('Segoe UI', 9, 'italic')
+            ).pack(anchor='w', padx=20, pady=(5, 0))
+        
+        # Session Statistics
+        if self.session_start_time:
+            session_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+            session_frame.pack(fill='x', pady=10, padx=20)
+            
+            ttk.Label(
+                session_frame,
+                text="📊 Current Session Stats",
+                style='Dark.TLabel',
+                font=('Segoe UI', 12, 'bold')
+            ).pack(anchor='w')
+            
+            duration = datetime.now() - self.session_start_time
+            hours = duration.seconds // 3600
+            minutes = (duration.seconds % 3600) // 60
+            
+            ttk.Label(
+                session_frame,
+                text=f"Duration: {hours}h {minutes}m",
+                style='Dark.TLabel'
+            ).pack(anchor='w', padx=20)
+            
+            ttk.Label(
+                session_frame,
+                text=f"Total Detections: {len(self.emotion_log)}",
+                style='Dark.TLabel'
+            ).pack(anchor='w', padx=20)
+    
+    def _populate_patterns_insights(self, parent):
+        """Populate patterns and insights tab"""
+        # Clear existing widgets
+        for widget in parent.winfo_children():
+            widget.destroy()
+        
+        # Scrollable frame
+        canvas = tk.Canvas(parent, bg=self.colors['bg_primary'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style='Dark.TFrame')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Title
+        ttk.Label(
+            scrollable_frame,
+            text="🧠 Patterns & Insights",
+            style='Title.TLabel'
+        ).pack(pady=(0, 20))
+        
+        if not self.emotion_log:
+            ttk.Label(
+                scrollable_frame,
+                text="No emotion data yet. Start detection to see patterns!",
+                style='Dark.TLabel',
+                font=('Segoe UI', 11)
+            ).pack(pady=20)
+            return
+        
+        # Emotion Transitions
+        if self.analytics.emotion_transitions:
+            trans_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+            trans_frame.pack(fill='x', pady=10, padx=20)
+            
+            ttk.Label(
+                trans_frame,
+                text="🔄 Most Common Emotion Transitions",
+                style='Dark.TLabel',
+                font=('Segoe UI', 12, 'bold')
+            ).pack(anchor='w')
+            
+            # Get top 5 transitions
+            all_transitions = []
+            for from_emotion, to_dict in self.analytics.emotion_transitions.items():
+                for to_emotion, count in to_dict.items():
+                    all_transitions.append((from_emotion, to_emotion, count))
+            
+            all_transitions.sort(key=lambda x: x[2], reverse=True)
+            
+            if all_transitions:
+                for from_em, to_em, count in all_transitions[:5]:
+                    ttk.Label(
+                        trans_frame,
+                        text=f"{self.get_emotion_icon(from_em)} {from_em} → {self.get_emotion_icon(to_em)} {to_em}: {count} times",
+                        style='Dark.TLabel'
+                    ).pack(anchor='w', padx=20, pady=2)
+            else:
+                ttk.Label(
+                    trans_frame,
+                    text="Keep using the app to detect transition patterns!",
+                    style='Dark.TLabel',
+                    font=('Segoe UI', 9, 'italic')
+                ).pack(anchor='w', padx=20)
+        
+        # Peak Emotion Hours
+        if self.analytics.hourly_emotions:
+            hourly_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+            hourly_frame.pack(fill='x', pady=10, padx=20)
+            
+            ttk.Label(
+                hourly_frame,
+                text="⏰ Emotion Patterns by Hour",
+                style='Dark.TLabel',
+                font=('Segoe UI', 12, 'bold')
+            ).pack(anchor='w')
+            
+            # Find peak emotion for each hour that has data
+            for hour in sorted(self.analytics.hourly_emotions.keys()):
+                emotions_dict = self.analytics.hourly_emotions[hour]
+                if emotions_dict:
+                    peak_emotion = max(emotions_dict.items(), key=lambda x: x[1])
+                    hour_12 = hour % 12 if hour % 12 != 0 else 12
+                    am_pm = 'AM' if hour < 12 else 'PM'
+                    
+                    ttk.Label(
+                        hourly_frame,
+                        text=f"{hour_12}:00 {am_pm}: {self.get_emotion_icon(peak_emotion[0])} {peak_emotion[0]} ({peak_emotion[1]} detections)",
+                        style='Dark.TLabel'
+                    ).pack(anchor='w', padx=20, pady=2)
+        
+        # Personalized Insights
+        insights_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+        insights_frame.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            insights_frame,
+            text="💡 Personalized Insights",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(anchor='w')
+        
+        wellbeing = self.analytics.calculate_wellbeing_score(self.emotion_log)
+        productivity = self.analytics.calculate_productivity_score(self.emotion_log)
+        insights = self.analytics.generate_insights(self.emotion_log, wellbeing, productivity)
+        
+        for insight in insights:
+            insight_label = ttk.Label(
+                insights_frame,
+                text=f"• {insight}",
+                style='Dark.TLabel',
+                wraplength=600
+            )
+            insight_label.pack(anchor='w', padx=20, pady=3)
+        
+        # Recommendations Section
+        rec_frame = ttk.Frame(scrollable_frame, style='Dark.TFrame')
+        rec_frame.pack(fill='x', pady=10, padx=20)
+        
+        ttk.Label(
+            rec_frame,
+            text="🎯 Recommendations",
+            style='Dark.TLabel',
+            font=('Segoe UI', 12, 'bold')
+        ).pack(anchor='w')
+        
+        # Generate recommendations based on current state
+        recommendations = []
+        
+        if wellbeing < 50:
+            recommendations.append("Consider scheduling regular breaks throughout your day")
+            recommendations.append("Try the suggested self-care actions for your current emotion")
+        
+        if productivity < 40:
+            recommendations.append("Take a 5-10 minute break to reset your focus")
+            recommendations.append("Consider changing your environment or activity")
+        
+        stress_count = self.analytics.get_recent_stress_count(24)
+        if stress_count >= 10:
+            recommendations.append("Practice breathing exercises or meditation")
+            recommendations.append("Identify and address stress triggers")
+        
+        stability = self.analytics.calculate_stability_score(self.emotion_log)
+        if stability < 40:
+            recommendations.append("Establish a consistent daily routine")
+            recommendations.append("Track your mood patterns to identify triggers")
+        
+        if not recommendations:
+            recommendations.append("Keep up the great work! You're doing well.")
+            recommendations.append("Continue monitoring your emotions regularly")
+            recommendations.append("Download weekly reports to track long-term progress")
+        
+        for rec in recommendations:
+            ttk.Label(
+                rec_frame,
+                text=f"✓ {rec}",
+                style='Dark.TLabel',
+                wraplength=600
+            ).pack(anchor='w', padx=20, pady=3)
+    
+    def _create_progress_bar(self, parent, value, color):
+        """Create a visual progress bar"""
+        bar_frame = tk.Frame(parent, bg='#3a3a3a', height=20)
+        bar_frame.pack(fill='x', padx=20, pady=5)
+        
+        # Calculate fill width (max 560px with padding)
+        fill_width = int((value / 100) * 560)
+        fill_bar = tk.Frame(bar_frame, bg=color, height=20, width=fill_width)
+        fill_bar.place(x=0, y=0)
 
     # ========== ALL ACTION METHODS (UNCHANGED) ==========
     def play_upbeat_music(self):
@@ -2475,6 +2907,86 @@ class EmotionRecognitionApp:
     def show_nature_content(self):
         webbrowser.open("https://www.youtube.com/results?search_query=beautiful+nature+scenery+4k+relaxing")
         messagebox.showinfo("🌸 Nature", "Immerse yourself in beautiful nature!")
+    
+    # ========== REPORT GENERATION ==========
+    def generate_report_dialog(self):
+        """Show dialog to choose report format"""
+        if not self.current_user:
+            messagebox.showwarning("Login Required", "Please login to generate reports.")
+            return
+        
+        if not self.emotion_log:
+            messagebox.showwarning("No Data", "No emotion data to generate report. Start detection first!")
+            return
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Generate Report")
+        dialog.configure(bg='#1a1a1a')
+        dialog.geometry("400x350")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 200
+        y = (dialog.winfo_screenheight() // 2) - 175
+        dialog.geometry(f"400x350+{x}+{y}")
+        
+        frame = ttk.Frame(dialog, style='Dark.TFrame', padding=20)
+        frame.pack(fill='both', expand=True)
+        
+        ttk.Label(frame, text="📄 Generate Emotion Report", style='Title.TLabel').pack(pady=(0, 20))
+        ttk.Label(frame, text=f"User: {self.current_user}", style='Dark.TLabel', font=('Segoe UI', 10)).pack(pady=5)
+        ttk.Label(frame, text=f"Total Emotions Logged: {len(self.emotion_log)}", style='Dark.TLabel', font=('Segoe UI', 10)).pack(pady=5)
+        
+        wellbeing = self.analytics.calculate_wellbeing_score(self.emotion_log)
+        ttk.Label(frame, text=f"Wellbeing Score: {wellbeing:.1f}/100", style='Dark.TLabel', font=('Segoe UI', 10)).pack(pady=5)
+        
+        ttk.Label(frame, text="\nSelect Report Format:", style='Dark.TLabel', font=('Segoe UI', 11, 'bold')).pack(pady=(15, 10))
+        
+        pdf_status = "✓ Available" if REPORTLAB_AVAILABLE else "✗ Install reportlab"
+        ttk.Button(frame, text=f"📕 PDF Report {pdf_status}", style='Gesture.TButton' if REPORTLAB_AVAILABLE else 'Dark.TButton', command=lambda: self._generate_pdf_report(dialog), state='normal' if REPORTLAB_AVAILABLE else 'disabled').pack(fill='x', pady=5)
+        
+        excel_status = "✓ Available" if PANDAS_AVAILABLE else "✗ Install pandas"
+        ttk.Button(frame, text=f"📗 Excel Report {excel_status}", style='Gesture.TButton' if PANDAS_AVAILABLE else 'Dark.TButton', command=lambda: self._generate_excel_report(dialog), state='normal' if PANDAS_AVAILABLE else 'disabled').pack(fill='x', pady=5)
+        
+        ttk.Button(frame, text="📄 JSON Data Export", style='Dark.TButton', command=lambda: self._generate_json_report(dialog)).pack(fill='x', pady=5)
+        ttk.Label(frame, text="\n💡 Tip: Install missing libraries to enable all formats", style='Dark.TLabel', font=('Segoe UI', 8, 'italic')).pack(pady=(10, 0))
+    
+    def _generate_pdf_report(self, dialog):
+        """Generate comprehensive PDF report"""
+        try:
+            filename = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")], initialfile=f"{self.current_user}_emotion_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+            if not filename:
+                return
+            ReportGenerator.generate_pdf_report(filename, self.current_user, self.emotion_log, self.analytics)
+            dialog.destroy()
+            messagebox.showinfo("Success", f"PDF report generated successfully!\n\nSaved to:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate PDF report:\n{str(e)}")
+    
+    def _generate_excel_report(self, dialog):
+        """Generate Excel report with multiple sheets"""
+        try:
+            filename = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")], initialfile=f"{self.current_user}_emotion_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+            if not filename:
+                return
+            ReportGenerator.generate_excel_report(filename, self.current_user, self.emotion_log, self.analytics)
+            dialog.destroy()
+            messagebox.showinfo("Success", f"Excel report generated successfully!\n\nSaved to:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate Excel report:\n{str(e)}")
+    
+    def _generate_json_report(self, dialog):
+        """Generate JSON data export"""
+        try:
+            filename = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json"), ("All files", "*.*")], initialfile=f"{self.current_user}_emotion_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+            if not filename:
+                return
+            ReportGenerator.generate_json_report(filename, self.current_user, self.emotion_log, self.analytics)
+            dialog.destroy()
+            messagebox.showinfo("Success", f"JSON data exported successfully!\n\nSaved to:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export JSON data:\n{str(e)}")
 
     def __del__(self):
         if hasattr(self, 'cap') and self.cap is not None:

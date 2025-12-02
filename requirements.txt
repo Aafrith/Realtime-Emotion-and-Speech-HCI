@@ -39,4 +39,8 @@ python-multipart==0.0.6
 colorama==0.4.6
 PyYAML==6.0.3
 
+# Report Generation for Advanced Analytics (Emotion Module)
+reportlab==4.0.7  # PDF report generation
+openpyxl==3.1.2   # Excel file support (works with pandas for .xlsx)
+
 
