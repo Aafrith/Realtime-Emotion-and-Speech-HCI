@@ -13,7 +13,7 @@ import theme_config
 class ModuleLauncherApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Jarvis - AI Control System")
+        self.root.title("Nova - AI Control System")
         
         # DPI awareness (Windows) + Tk scaling
         try:
@@ -104,7 +104,7 @@ class ModuleLauncherApp:
         
         title_label = tk.Label(
             text_brand,
-            text="JARVIS",
+            text="NOVA",
             font=("Segoe UI", 32, "bold"),
             bg=self.colors["bg_secondary"],
             fg=self.colors["text_primary"]
@@ -160,7 +160,7 @@ class ModuleLauncherApp:
         
         welcome_title = tk.Label(
             welcome_inner,
-            text="Welcome to Jarvis",
+            text="Welcome to Nova",
             font=("Segoe UI", 16, "bold"),
             bg=self.colors["bg_tertiary"],
             fg=self.colors["text_primary"]
@@ -375,7 +375,7 @@ class ModuleLauncherApp:
         # Version info
         tk.Label(
             footer,
-            text="Jarvis v1.0",
+            text="Nova v1.0",
             font=("Segoe UI", 9),
             bg=self.colors["bg_secondary"],
             fg=self.colors["text_muted"]
