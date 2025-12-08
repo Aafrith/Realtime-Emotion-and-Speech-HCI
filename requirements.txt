@@ -25,6 +25,11 @@ PyAutoGUI
 pywin32==311
 psutil==7.0.0
 sounddevice==0.5.3
+WMI  # For Windows brightness control
+
+# OCR for screen reading
+pytesseract==0.3.10
+Pillow>=12.0.0
 
 
 # Database
