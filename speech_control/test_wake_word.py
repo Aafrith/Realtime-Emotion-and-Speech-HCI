@@ -89,7 +89,7 @@ def test_wake_word_detection():
     print("WAKE WORD DETECTION TEST")
     print("=" * 60)
     
-    wake_word = "jarvis"
+    wake_word = "nova"
     print(f"Wake word: '{wake_word}'")
     print("Say the wake word (you have 5 seconds)...")
     
@@ -151,8 +151,8 @@ def continuous_wake_word_test(duration=30):
     print("\n" + "=" * 60)
     print("CONTINUOUS WAKE WORD LISTENING TEST")
     print("=" * 60)
-    print(f"Listening for 'jarvis' for {duration} seconds...")
-    print("Say 'jarvis' whenever you're ready")
+    print(f"Listening for 'nova' for {duration} seconds...")
+    print("Say 'nova' whenever you're ready")
     print("Press Ctrl+C to stop early")
     print()
     
@@ -182,7 +182,7 @@ def continuous_wake_word_test(duration=30):
                 text = recognizer.recognize_google(audio).lower()
                 print(f"[{elapsed}s] Heard: '{text}'                    ")
                 
-                if "jarvis" in text:
+                if "nova" in text:
                     detections += 1
                     print(f"  ✓ WAKE WORD DETECTED! (Detection #{detections})")
                     print()

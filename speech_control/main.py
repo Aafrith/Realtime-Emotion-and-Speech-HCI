@@ -20,6 +20,9 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from launcher import theme_config
 
+# Import AI personality module
+from ai_personality import AIPersonality
+
 # Hand-gesture stack
 import cv2
 import mediapipe as mp
@@ -28,6 +31,14 @@ import numpy as np
 
 # PIL for embedding webcam frames in Tk
 from PIL import Image, ImageTk
+
+# OCR for screen reading
+try:
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    print("Warning: pytesseract not installed. Screen reading disabled.")
 
 
 # =========================
@@ -100,6 +111,10 @@ class ModernDarkSpeechApp:
             self.speech_engine = EnhancedSpeechEngine()
             self.command_processor = EnhancedCommandProcessor()
             self.system_controller = EnhancedSystemController()
+            self.ai_personality = AIPersonality()  # Add AI personality
+            
+            # Track last opened context (for context-aware search)
+            self.last_opened_context = None
 
             # Gesture controller with UI callbacks and frame queue for embedded preview
             self.gesture_controller = HandGestureController(
@@ -113,7 +128,7 @@ class ModernDarkSpeechApp:
                 "voice_feedback": True,
                 "auto_execute": True,
                 "wake_word_enabled": True,
-                "wake_word": "jarvis",
+                "wake_word": "nova",
                 "wake_word_sensitivity": 0.6,
                 "command_timeout": 5,
                 # camera preferences
@@ -188,7 +203,7 @@ class ModernDarkSpeechApp:
                          text="🎤 AI Speech Assistant + 🖐️ Hand Gesture Mouse Control",
                          style='Title.TLabel')
         subtitle = ttk.Label(header,
-                            text="Say 'Jarvis' to activate • Use the button or voice to control the virtual mouse",
+                            text="Say 'Nova' to activate • Use the button or voice to control the virtual mouse",
                             style='Dark.TLabel',
                             font=("Segoe UI", 10))
         title.grid(row=0, column=0, sticky="w", padx=0, pady=(0, 5))
@@ -343,14 +358,14 @@ class ModernDarkSpeechApp:
         self.notebook.add(self.tab_history, text="📊 History")
         self.notebook.add(self.tab_settings, text="⚙️ Settings")
         self.notebook.add(self.tab_logs, text="📝 Logs")
-        self.notebook.add(self.tab_gesture, text="🖐️ Virtual Mouse")  # NEW
+        self.notebook.add(self.tab_gesture, text="🖐️ Virtual Mouse")  
 
         self._build_tab_control()
         self._build_tab_commands()
         self._build_tab_history()
         self._build_tab_settings()
         self._build_tab_logs()
-        self._build_tab_gesture()  # NEW
+        self._build_tab_gesture()  
 
         # Footer
         footer = tk.Frame(main_container, bg=self.colors["bg_secondary"], bd=0, relief=tk.FLAT, height=40)
@@ -414,7 +429,7 @@ class ModernDarkSpeechApp:
             card,
             text=("How to Use:\n"
                   "1) System listens for wake word automatically.\n"
-                  "2) Say 'Jarvis' to enable continuous mode.\n"
+                  "2) Say 'Nova' to enable continuous mode.\n"
                   "3) Speak commands directly (e.g., 'open Chrome', 'volume up').\n"
                   "4) Use the button or voice commands to start the Virtual Mouse.\n"
                   "   • In the '🖐️ Virtual Mouse' tab: live camera is embedded.\n"
@@ -533,17 +548,26 @@ class ModernDarkSpeechApp:
                  font=("Segoe UI", 10), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
                  insertbackground=self.colors["text_primary"]).pack(side="left")
 
+        # Wake word setting
+        tk.Label(card, text="Wake Word", font=("Segoe UI", 10),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"]).grid(row=4, column=0, sticky="w", padx=12, pady=(8, 4))
+        self.wake_word_var = tk.StringVar(value=self.settings.get("wake_word", "nova"))
+        self.wake_word_entry = tk.Entry(card, textvariable=self.wake_word_var, width=20,
+                                        font=("Segoe UI", 10), bg=self.colors["bg_hover"], fg=self.colors["text_primary"],
+                                        insertbackground=self.colors["text_primary"])
+        self.wake_word_entry.grid(row=4, column=1, sticky="w", padx=12, pady=(8, 4))
+
         self.voice_feedback_var = tk.BooleanVar(value=self.settings["voice_feedback"])
         tk.Checkbutton(card, text="Enable Voice Feedback", variable=self.voice_feedback_var,
                        bg=self.colors["bg_tertiary"], fg=self.colors["text_primary"],
                        selectcolor=self.colors["bg_hover"], activebackground=self.colors["bg_tertiary"]).grid(
-            row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 8)
+            row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 8)
         )
 
         tk.Button(card, text="💾 Save Settings", font=("Segoe UI", 9, "bold"),
                   bg=self.colors["accent_primary"], fg="white",
                   activebackground="#1b6d2e", bd=0, relief=tk.FLAT, padx=16, pady=10,
-                  cursor="hand2", command=self.save_settings).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 12))
+                  cursor="hand2", command=self.save_settings).grid(row=6, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 12))
 
     def _build_tab_logs(self):
         f = self.tab_logs
@@ -764,25 +788,102 @@ class ModernDarkSpeechApp:
             self.current_command_var.set(f"Processing: '{text}'")
             self.status_bar_var.set(f"🧠 Processing: {text}")
             history_id = self.db_manager.add_command_history(text, confidence)
+            
+            # Process and extract actual command
             command_result = self.command_processor.process_command(text)
+            
+            # Show if command was cleaned/extracted
+            extracted_cmd = self.command_processor.last_extracted_command
+            if extracted_cmd and extracted_cmd != text.lower().strip():
+                self.safe_log_message(f"💡 Extracted: '{extracted_cmd}' from '{text}'")
+            
+            # Handle conversational commands with AI personality
+            if command_result["action"] == "conversation":
+                conv_type = command_result["parameters"].get("type", "")
+                response, emotion = self.ai_personality.get_greeting_response(conv_type)
+                self.safe_log_message(f"💬 {text} → {response}")
+                if self.settings["voice_feedback"]:
+                    threading.Thread(target=lambda: self.speech_engine.speak(response, emotion), daemon=True).start()
+                self.db_manager.update_command_status(history_id, "success")
+                return
+            
             if command_result["action"] != "unknown":
                 success = self.execute_command(command_result)
                 status = "success" if success else "failed"
                 self.db_manager.update_command_status(history_id, status)
+                
+                # Generate friendly AI response
                 if self.settings["voice_feedback"]:
-                    threading.Thread(target=lambda: self.speech_engine.speak("Done" if success else "Command failed"), daemon=True).start()
+                    action_type = command_result["action"]
+                    action_data = self._get_action_description(command_result)
+                    response, emotion = self.ai_personality.get_action_response(action_type, action_data, success)
+                    threading.Thread(target=lambda: self.speech_engine.speak(response, emotion), daemon=True).start()
+                
                 self.safe_log_message(f"✅ {text} — {status}")
             else:
+                # Intelligent unknown command handling
                 self.db_manager.update_command_status(history_id, "unknown")
-                if self.settings["voice_feedback"]:
-                    threading.Thread(target=lambda: self.speech_engine.speak("Command not recognized"), daemon=True).start()
-                self.safe_log_message(f"❌ Unknown command: {text}")
+                suggestion = self.command_processor.suggest_command(text)
+                
+                if suggestion:
+                    self.safe_log_message(f"🤔 I heard '{text}'. Did you mean '{suggestion}'?")
+                    if self.settings["voice_feedback"]:
+                        response = f"I'm not sure about '{text}'. Did you mean {suggestion}?"
+                        threading.Thread(target=lambda: self.speech_engine.speak(response, "curious"), daemon=True).start()
+                else:
+                    self.safe_log_message(f"🤔 I heard '{text}', but I'm not sure what to do with it.")
+                    if self.settings["voice_feedback"]:
+                        response = f"I heard '{text}', but I'm not sure what to do with that. Try saying 'help' for available commands."
+                        threading.Thread(target=lambda: self.speech_engine.speak(response, "confused"), daemon=True).start()
         except Exception as e:
             self.safe_log_message(f"❌ Processing error: {e}")
         finally:
             self.is_processing = False
             if self.notebook.index(self.notebook.select()) == 2 and self.history_tree:
                 self.load_history()
+    
+    def _get_action_description(self, command_result):
+        """Extract action description for friendly responses"""
+        action = command_result["action"]
+        params = command_result["parameters"]
+        
+        if action == "application":
+            if params.get("close"):
+                return "application_close"
+            return params.get("app", "application")
+        elif action == "system":
+            sys_action = params.get("action", "")
+            if sys_action == "volume":
+                direction = params.get("direction", "up")
+                return f"volume_{direction}"
+            elif sys_action == "brightnesscontrol":
+                direction = params.get("direction", "up")
+                return f"brightness_{direction}"
+            return sys_action
+        elif action == "gesture":
+            state = params.get("state", "toggle")
+            if state == "on":
+                return "gesture_enabled"
+            elif state == "off":
+                return "gesture_disabled"
+        elif action == "file":
+            file_action = params.get("action", "")
+            if "folder" in file_action:
+                return "folder_created" if "create" in file_action else "folder_opened"
+            return "file_created"
+        elif action == "window":
+            return params.get("action", "window")
+        elif action == "scroll":
+            return "scroll"
+        elif action == "typing":
+            return "typing"
+        elif action == "selection":
+            return "selection"
+        elif action == "navigation":
+            direction = params.get("direction", "")
+            return f"arrow_{direction}" if direction else "navigation"
+        
+        return action
 
     def execute_command(self, command_result):
         try:
@@ -790,10 +891,19 @@ class ModernDarkSpeechApp:
             params = command_result["parameters"]
 
             if action == "application":
-                return self.system_controller.open_application(params.get("app", ""))
+                if params.get("close"):
+                    return self.system_controller.close_application(params.get("app", ""))
+                else:
+                    # Reset context when opening non-web apps
+                    app = params.get("app", "")
+                    if app not in ['chrome', 'firefox', 'edge', 'browser']:
+                        self.last_opened_context = None
+                    return self.system_controller.open_application(app)
 
             if action == "web":
-                return self.system_controller.web_search(params.get("query", ""))
+                # Pass context if available
+                context = getattr(self, 'last_opened_context', None)
+                return self.system_controller.web_search(params, context)
 
             if action == "system":
                 return self.system_controller.execute_system_command(params)
@@ -819,6 +929,27 @@ class ModernDarkSpeechApp:
                     return self.stop_gesture()
                 else:
                     return self.stop_gesture() if self.gesture_controller.is_running() else self.start_gesture()
+
+            # window management
+            if action == "window":
+                return self.system_controller.window_operation(params)
+
+            # page scrolling
+            if action == "scroll":
+                direction = params.get("direction", "down")
+                return self.system_controller.scroll_page(direction)
+
+            # typing/dictation
+            if action == "typing":
+                return self.system_controller.typing_operation(params)
+
+            # text selection
+            if action == "selection":
+                return self.system_controller.selection_operation(params)
+
+            # arrow key navigation
+            if action == "navigation":
+                return self.system_controller.navigation_operation(params)
 
             return False
         except Exception as e:
@@ -892,15 +1023,22 @@ class ModernDarkSpeechApp:
 
         # Convert BGR -> RGB -> ImageTk and show in label safely on main thread
         def _update():
+            # Check if label still exists
+            if not self.gesture_video_label.winfo_exists():  # type: ignore
+                return
             # Fit label size while preserving AR
-            lbl_w = max(self.gesture_video_label.winfo_width(), 320)
-            lbl_h = max(self.gesture_video_label.winfo_height(), 240)
+            lbl_w = max(self.gesture_video_label.winfo_width(), 320)  # type: ignore
+            lbl_h = max(self.gesture_video_label.winfo_height(), 240)  # type: ignore
             # Convert to PIL Image
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(frame_rgb)
-            img.thumbnail((lbl_w, lbl_h), Image.LANCZOS)
+            # Use Image.Resampling.LANCZOS for newer PIL versions, fallback to Image.LANCZOS
+            try:
+                img.thumbnail((lbl_w, lbl_h), Image.Resampling.LANCZOS)
+            except AttributeError:
+                img.thumbnail((lbl_w, lbl_h), Image.LANCZOS)  # type: ignore
             imgtk = ImageTk.PhotoImage(image=img)
-            self.gesture_video_label.configure(image=imgtk)
+            self.gesture_video_label.configure(image=imgtk)  # type: ignore
             # Keep a reference to avoid garbage collection
             self._last_gesture_image = imgtk
 
@@ -968,7 +1106,7 @@ class ModernDarkSpeechApp:
         try:
             hist = self.db_manager.get_command_history(20)
             if not hist:
-                widget.insert(tk.END, "No recent activity. Say 'Jarvis' to activate continuous listening.\n")
+                widget.insert(tk.END, "No recent activity. Say 'Nova' to activate continuous listening.\n")
                 widget.configure(state="disabled")
                 return
             for item in hist:
@@ -1157,8 +1295,8 @@ class HandGestureController:
 
     def _run(self):
         try:
-            mp_hands = mp.solutions.hands
-            mp_drawing = mp.solutions.drawing_utils
+            mp_hands = mp.solutions.hands  # type: ignore
+            mp_drawing = mp.solutions.drawing_utils  # type: ignore
 
             screen_w, screen_h = pyautogui.size()
             mid_screen_y = screen_h // 2
@@ -1208,6 +1346,11 @@ class HandGestureController:
             ) as hands:
                 last_push = 0
                 push_interval = 0.02  # ~50 fps max push to UI
+
+                # Ensure stream is initialized
+                if self.stream is None:
+                    print("Error: Camera stream not initialized")
+                    return
 
                 while self.is_running():
                     frame = self.stream.read()
@@ -1348,8 +1491,12 @@ class EnhancedSpeechEngine:
             self.recognizer.non_speaking_duration = 0.5  # Non-speaking duration required to consider phrase complete
             
             self.tts_engine = pyttsx3.init()
-            self.tts_engine.setProperty("rate", 150)
-            self.tts_engine.setProperty("volume", 0.85)
+            voices = self.tts_engine.getProperty('voices')
+            
+            if len(voices) > 1:
+                self.tts_engine.setProperty('voice', voices[1].id)
+            self.tts_engine.setProperty("rate", 165)
+            self.tts_engine.setProperty("volume", 0.9)
             
             # Initial ambient noise adjustment
             print("Calibrating microphone for ambient noise...")
@@ -1363,16 +1510,16 @@ class EnhancedSpeechEngine:
         try:
             with self.microphone as source:
                 # Brief ambient adjustment before each listen
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
                 audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=3)
             
             # Try Google Speech Recognition with retry
             try:
-                text = self.recognizer.recognize_google(audio).lower()
+                text = str(self.recognizer.recognize_google(audio)).lower()
             except sr.RequestError:
                 # Network error, try once more
                 try:
-                    text = self.recognizer.recognize_google(audio).lower()
+                    text = str(self.recognizer.recognize_google(audio)).lower()
                 except:
                     return None
             
@@ -1406,16 +1553,16 @@ class EnhancedSpeechEngine:
         try:
             with self.microphone as source:
                 # Quick ambient adjustment
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
                 audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=6)
             
             # Try Google Speech Recognition with retry
             try:
-                text = self.recognizer.recognize_google(audio).lower()
+                text = str(self.recognizer.recognize_google(audio)).lower()
             except sr.RequestError:
                 # Network error, try once more
                 try:
-                    text = self.recognizer.recognize_google(audio).lower()
+                    text = str(self.recognizer.recognize_google(audio)).lower()
                 except:
                     return None
             
@@ -1428,10 +1575,51 @@ class EnhancedSpeechEngine:
             print(f"Command listening error: {e}")
             return None
 
-    def speak(self, text):
+    def speak(self, text, emotion="neutral", interruptible=True):
+        """Enhanced speak with emotion-based voice modulation and interrupt capability"""
         try:
-            self.tts_engine.say(text)
-            self.tts_engine.runAndWait()
+            # Adjust voice properties based on emotion for more natural responses
+            original_rate = self.tts_engine.getProperty('rate')
+            original_volume = self.tts_engine.getProperty('volume')
+            
+            if emotion == "excited":
+                self.tts_engine.setProperty('rate', 180)
+                self.tts_engine.setProperty('volume', 0.95)
+            elif emotion == "friendly":
+                self.tts_engine.setProperty('rate', 165)
+                self.tts_engine.setProperty('volume', 0.9)
+            elif emotion == "calm":
+                self.tts_engine.setProperty('rate', 150)
+                self.tts_engine.setProperty('volume', 0.85)
+            elif emotion == "serious":
+                self.tts_engine.setProperty('rate', 145)
+                self.tts_engine.setProperty('volume', 0.9)
+            
+            if interruptible:
+                # For long text, check for interruption every few words
+                words = text.split()
+                chunk_size = 10  # Speak 10 words at a time
+                for i in range(0, len(words), chunk_size):
+                    chunk = ' '.join(words[i:i+chunk_size])
+                    self.tts_engine.say(chunk)
+                    self.tts_engine.runAndWait()
+                    # Short pause to check for interruption
+                    import time
+                    time.sleep(0.1)
+            else:
+                self.tts_engine.say(text)
+                self.tts_engine.runAndWait()
+            
+            # Restore original settings
+            self.tts_engine.setProperty('rate', original_rate)
+            self.tts_engine.setProperty('volume', original_volume)
+        except Exception:
+            pass
+    
+    def stop_speaking(self):
+        """Stop current speech immediately"""
+        try:
+            self.tts_engine.stop()
         except Exception:
             pass
 
@@ -1444,131 +1632,513 @@ class EnhancedSpeechEngine:
 
 class EnhancedCommandProcessor:
     def __init__(self):
+        self.last_extracted_command = None  # Store last extracted command for logging
         self.load_enhanced_patterns()
 
     def load_enhanced_patterns(self):
+        # IMPORTANT: Pattern order matters! Specific patterns MUST come before generic ones
+        # Order: typing → selection → web → window → scroll → conversation → system → application → rest
         self.patterns = {
-            "application": [
-                (r"open (\w+)", "open_app"),
-                (r"launch (\w+)", "open_app"),
-                (r"start (\w+)", "open_app"),
-                (r"run (\w+)", "open_app"),
+            # 1. TYPING - Most specific, check first
+            "typing": [
+                (r"type (.+)", "type_text"),
+                (r"write (.+)", "type_text"),
+                (r"enter (.+)", "type_text"),
+                (r"new line", "new_line"),
+                (r"new paragraph", "new_paragraph"),
+                (r"press enter", "press_enter"),
+                (r"press tab", "press_tab"),
+                (r"(press |hit )?space(bar)?", "press_space"),
+                (r"backspace", "backspace"),
+                (r"delete", "delete_key"),
+                # Keyboard numbers
+                (r"press (\d+|zero|one|two|three|four|five|six|seven|eight|nine)", "press_key"),
+                (r"type (\d+|zero|one|two|three|four|five|six|seven|eight|nine)", "press_key"),
+                # Navigation keys
+                (r"go back", "press_back"),
+                (r"go forward", "press_forward"),
+                (r"press escape", "press_escape"),
+                (r"escape", "press_escape"),
             ],
+            
+            # 2. SELECTION - Text selection and OCR-based screen selection
+            "selection": [
+                # General screen selection using OCR (must come first)
+                (r"select (.+)", "select_on_screen"),
+                (r"click (.+)", "select_on_screen"),
+                (r"choose (.+)", "select_on_screen"),
+                # Specific text selection (more specific patterns after general)
+                (r"select next (word|line|character)", "select_next"),
+                (r"select previous (word|line|character)", "select_previous"),
+                (r"select all", "select_all"),
+            ],
+            
+            # 3. WEB - Website opening and search (BEFORE application)
             "web": [
-                (r"search for (.+)", "web_search"),
-                (r"google (.+)", "web_search"),
-                (r"look up (.+)", "web_search"),
-                (r"browse (.+)", "web_search"),
-                (r"check weather", "web_search"),
-                (r"check news", "web_search"),
-                (r"open youtube", "open_website"),
-                (r"open facebook", "open_website"),
-                (r"open twitter", "open_website"),
-                (r"open instagram", "open_website"),
-                (r"open linkedin", "open_website"),
-                (r"open github", "open_website"),
-                (r"open gmail", "open_website"),
-                (r"open amazon", "open_website"),
+                # Website opening (must come before search to take priority)
+                (r"(open|launch|go to) youtube", "open_website"),
+                (r"(open|launch|go to) facebook", "open_website"),
+                (r"(open|launch|go to) twitter", "open_website"),
+                (r"(open|launch|go to) instagram", "open_website"),
+                (r"(open|launch|go to) linkedin", "open_website"),
+                (r"(open|launch|go to) whatsapp( web)?", "open_website"),
+                (r"(open|launch|go to) github", "open_website"),
+                (r"(open|launch|go to) gmail", "open_website"),
+                (r"(open|launch|go to) amazon", "open_website"),
                 (r"open netflix", "open_website"),
+                (r"open spotify", "open_website"),
+                (r"open reddit", "open_website"),
+                (r"open pinterest", "open_website"),
+                (r"open tiktok", "open_website"),
+                (r"open snapchat", "open_website"),
+                (r"open telegram", "open_website"),
+                (r"open discord", "open_website"),
+                (r"open slack", "open_website"),
+                (r"open medium", "open_website"),
+                (r"open quora", "open_website"),
+                (r"open stack overflow", "open_website"),
                 (r"open maps", "open_website"),
                 (r"google maps", "open_website"),
+                (r"open drive", "open_website"),
+                (r"google drive", "open_website"),
+                # Web search (comes after website opening)
+                # Explicit Google searches (bypass context)
+                (r"search (.+) in google", "google_search"),
+                (r"google search (.+)", "google_search"),
+                (r"search google for (.+)", "google_search"),
+                # Browse always opens Google (not YouTube)
+                (r"browse (.+)", "browse_web"),
+                # Context-aware searches (YouTube if open, else Google)
+                (r"search for (.+)", "web_search"),
+                (r"search (.+)", "web_search"),
+                (r"google (.+)", "web_search"),
+                (r"look up (.+)", "web_search"),
+                (r"find (.+)", "web_search"), 
+                (r"show me (.+)", "web_search"),
+                (r"check weather", "web_search"),
+                (r"check news", "web_search"),
             ],
+            
+            # 4. WINDOW - Window and tab management (BEFORE navigation)
+            "window": [
+                # Tab operations - MUST come FIRST (more specific than app switching)
+                (r"close (tab|table)", "close_tab"),
+                (r"close this (tab|table)", "close_tab"),
+                (r"go to next (tab|table)", "switch_tab"),
+                (r"go to previous (tab|table)", "previous_tab"),
+                (r"switch previous (tab|table)", "previous_tab"),
+                (r"switch next (tab|table)", "switch_tab"),
+                (r"switch (tab|table)", "switch_tab"),
+                (r"next (tab|table)", "switch_tab"),
+                (r"change (tab|table)", "switch_tab"),
+                (r"change previous (tab|table)", "previous_tab"),
+                (r"change next (tab|table)", "switch_tab"),
+                (r"previous (tab|table)", "previous_tab"),
+                (r"new (tab|table)", "new_tab"),
+                (r"open new (tab|table)", "new_tab"),
+                
+                # Window switching - Generic window commands
+                (r"^(switch|change) window$", "next_window"),
+                (r"go to next window", "next_window"),
+                (r"go to previous window", "previous_window"),
+                (r"next window", "next_window"),
+                (r"previous window", "previous_window"),
+                
+                # App-specific switching - AFTER tab and generic window patterns
+                (r"switch to (\w+)", "switch_to_window"),
+                (r"switch (\w+)", "switch_to_window"),
+                (r"change to (\w+)", "switch_to_window"),
+                
+                # Window operations
+                (r"(minimize|minimise) (window|the window|this window|this)", "minimize_window"),
+                (r"maximize (window|the window|this window)", "maximize_window"),
+                (r"close (window|the window|this window)", "close_window"),
+            ],
+            
+            # 5. SCROLL - Page scrolling
+            "scroll": [
+                (r"scroll (up|down)", "scroll_page"),
+                (r"(page|scroll) (up|down)", "scroll_page"),
+                (r"scroll to (top|bottom)", "scroll_extreme"),
+            ],
+            
+            # 6. CONVERSATION - Friendly responses
+            "conversation": [
+                (r"(hello|hi|hey|greetings)", "greeting"),
+                (r"how are you", "how_are_you"),
+                (r"what(s| is) your name", "my_name"),
+                (r"(thank you|thanks|thank)", "thanks"),
+                (r"(goodbye|bye|see you)", "goodbye"),
+                (r"(help|what can you do)", "help"),
+                (r"(who made you|who created you)", "creator"),
+                (r"tell me a joke", "joke"),
+            ],
+            
+            # 7. SYSTEM - System commands (volume, brightness, time, etc.) - BEFORE utility
             "system": [
-                (r"volume (up|down)", "volume_control"),
-                (r"(increase|decrease) volume", "volume_control"),
+                (r"volume up", "volume_control"),
+                (r"volume down", "volume_control"),
+                (r"(increase|raise) (the )?volume", "volume_control"),
+                (r"(decrease|lower) (the )?volume", "volume_control"),
+                (r"turn (the )?volume (up|down)", "volume_control"), 
+                (r"make it (louder|quieter)", "volume_control"),  
                 (r"(mute|unmute)", "mute_control"),
+                (r"brightness up", "brightness_control"),
+                (r"brightness down", "brightness_control"),
+                (r"(increase|raise|turn up) (the )?brightness", "brightness_control"),
+                (r"(decrease|lower|turn down|dim) (the )?brightness", "brightness_control"),
                 (r"lock (computer|screen)", "lock_system"),
                 (r"shutdown|shut down", "shutdown"),
                 (r"restart|reboot", "restart"),
                 (r"sleep|hibernate", "sleep"),
                 (r"take screenshot", "screenshot"),
+                # TIME/DATE - Must come BEFORE utility to avoid calculator conflict
                 (r"what time is it", "tell_time"),
+                (r"^time$", "tell_time"),
+                (r"tell (me )?(the )?time", "tell_time"),
+                (r"current time", "tell_time"),
                 (r"what date is it", "tell_date"),
+                (r"^date$", "tell_date"),
+                (r"tell (me )?(the )?date", "tell_date"),
+                (r"current date", "tell_date"),
+                (r"today's date", "tell_date"),
                 (r"minimize all", "minimize_all"),
                 (r"show desktop", "show_desktop"),
                 (r"task manager", "task_manager"),
                 (r"check internet", "check_internet"),
+                (r"empty (the )?recycle bin", "empty_recycle"),
             ],
+            
+            # 8. APPLICATION - Open/close applications (AFTER web patterns)
+            "application": [
+                (r"open (\w+)", "open_app"),
+                (r"launch (\w+)", "open_app"),
+                (r"start (\w+)", "open_app"),
+                (r"run (\w+)", "open_app"),
+                (r"close (\w+)", "close_app"),
+            ],
+            
+            # 9. FILE - File operations
             "file": [
                 (r"create folder (.+)", "create_folder"),
+                (r"(create|make) (a )?file (.+)", "create_file"),
                 (r"open (desktop|documents|downloads|pictures|music|videos)", "open_folder"),
                 (r"go to (desktop|documents|downloads|pictures|music|videos)", "open_folder"),
+                (r"open (file explorer|explorer)", "open_explorer"),
             ],
+            
+            # 10. MEDIA - Media controls + YouTube/Screen OCR navigation
             "media": [
-                (r"play music", "play_music"),
-                (r"pause music", "pause_music"),
-                (r"next song", "next_song"),
-                (r"previous song", "previous_song"),
-                (r"stop music", "stop_music"),
+                # YouTube video play commands
+                (r"^play$", "play_video"),  # Single word 'play' for YouTube
+                (r"play (this|video|it)", "play_video"),
+                (r"play first (one|video|song|result)", "play_video"),
+                (r"play (the )?video", "play_video"),
+                
+                # OCR-based selection by number (first, second, third, etc.)
+                (r"select (first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th) (result|video|one)", "select_number"),
+                (r"play (first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th) (result|video|one)", "play_number"),
+                (r"click (first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th) (result|video|one)", "select_number"),
+                
+                # OCR-based selection by text/title
+                (r"select (video|result) (about|with|titled) (.+)", "select_by_text"),
+                (r"play (video|result) (about|with|titled) (.+)", "play_by_text"),
+                (r"find and (select|play|click) (.+)", "select_by_text"),
+                
+                # Traditional navigation
+                (r"select first (one|video|result|song)", "select_first"),
+                (r"select (down|up|next|previous)", "navigate_result"),  # Captures direction in group 1
+                (r"(go |move |scroll )?(down|up)", "scroll_direction"),  # Captures direction in group 2
+                (r"next (result|video|one)", "next_result"),
+                (r"previous (result|video|one)", "previous_result"),
+                (r"scroll (down|up)", "scroll_media"),
+                
+                # Regular media controls
+                (r"(play|start|resume) (music|song|audio)", "play_music"),
+                (r"(pause|stop) (music|song|audio)", "pause_music"),
+                (r"(next|skip) (song|track)", "next_song"),
+                (r"(previous|back|last) (song|track)", "previous_song"),
+                (r"stop (playing |the )?music", "stop_music"),
             ],
+            
+            # 11. NETWORK - Network operations
             "network": [
                 (r"connect wifi", "connect_wifi"),
                 (r"disconnect wifi", "disconnect_wifi"),
                 (r"show ip", "show_ip"),
                 (r"network settings", "network_settings"),
             ],
+            
+            # 12. UTILITY - Utility operations (math only, NOT time/date)
             "utility": [
                 (r"set timer (.+)", "set_timer"),
                 (r"set alarm (.+)", "set_alarm"),
+                # CALCULATOR - Only match actual math operations
                 (r"calculate (.+)", "calculate"),
+                (r"(add|subtract|multiply|divide|sum|minus|plus|times) (.+)", "calculate"),
+                (r"what('s| is) (\d+.*[+\-*/].+)", "calculate"),  # Only math expressions
+                (r"solve (.+)", "calculate"),
                 (r"copy (.+)", "copy_text"),
                 (r"paste", "paste_text"),
+                (r"(read|speak|say) (.+)", "read_text"),
             ],
-            # Gesture commands  ✅ now supports "enable mouse" / "disable mouse" / "toggle mouse"
+            
+            # 13. GESTURE - Gesture control
             "gesture": [
-                # new primary phrases
-                (r"(enable|start|turn on)\s+(virtual\s+)?mouse", "gesture_on"),
-                (r"(disable|stop|turn off)\s+(virtual\s+)?mouse", "gesture_off"),
-                (r"(toggle)\s+(virtual\s+)?mouse", "gesture_toggle"),
-
-                # keep legacy phrases working
-                (r"(enable|start|turn on)\s+(hand ?gestures?|gesture mouse|handgesture)", "gesture_on"),
-                (r"(disable|stop|turn off)\s+(hand ?gestures?|gesture mouse|handgesture)", "gesture_off"),
-                (r"(toggle)\s+(hand ?gestures?|gesture mouse|handgesture)", "gesture_toggle"),
-                (r"enable handgesture", "gesture_on"),
-                (r"disable handgesture", "gesture_off"),
+                (r"(enable|start|turn on) (gesture|mouse|virtual mouse)", "gesture_on"),
+                (r"(disable|stop|turn off) (gesture|mouse|virtual mouse)", "gesture_off"),
+                (r"(toggle|switch) (gesture|mouse)", "gesture_toggle"),
+            ],
+            
+            # 14. NAVIGATION - Arrow keys (LAST, most generic)
+            "navigation": [
+                (r"^right$", "arrow_right"),
+                (r"^left$", "arrow_left"),
+                (r"^up$", "arrow_up"),
+                (r"^down$", "arrow_down"),
+                (r"arrow right", "arrow_right"),
+                (r"arrow left", "arrow_left"),
+                (r"arrow up", "arrow_up"),
+                (r"arrow down", "arrow_down"),
+                (r"press right", "arrow_right"),
+                (r"press left", "arrow_left"),
+                (r"press up", "arrow_up"),
+                (r"press down", "arrow_down"),
             ],
         }
 
     def process_command(self, text):
         import re
-        t = text.lower().strip()
+        
+        # First, clean the input by removing filler words and extracting command
+        cleaned_text = self.extract_command(text)
+        self.last_extracted_command = cleaned_text  # Store for logging
+        
+        t = cleaned_text.lower().strip()
         for cat, pats in self.patterns.items():
             for pattern, action in pats:
                 m = re.search(pattern, t)
                 if m:
                     return self._build(cat, action, m, t)
         return {"action": "unknown", "parameters": {}, "confidence": 0.1}
+    
+    def extract_command(self, text):
+        """Extract actual command from text by removing filler words and focusing on action keywords"""
+        import re
+        
+        t = text.lower().strip()
+        
+        # List of filler/conversational words to remove
+        filler_words = [
+            'yeah', 'yes', 'yep', 'yup', 'sure', 'okay', 'ok', 'alright', 'fine',
+            'no', 'nah', 'nope', 'please', 'thanks', 'thank you', 'sorry',
+            'um', 'uh', 'ah', 'well', 'like', 'just', 'maybe', 'perhaps',
+            'can you', 'could you', 'would you', 'will you', 'i want', 'i need',
+            'of course', 'ofcourse', 'definitely', 'absolutely', 'totally',
+            'actually', 'basically', 'literally', 'really', 'very', 'quite',
+            'i want to', 'i need to', 'i would like to', 'i want you to',
+        ]
+        
+        # Action keywords that indicate actual commands
+        action_keywords = [
+            'open', 'close', 'launch', 'start', 'run', 'stop', 'quit', 'exit',
+            'search', 'google', 'browse', 'find', 'look', 'show',
+            'play', 'pause', 'stop', 'next', 'previous', 'skip',
+            'select', 'click', 'choose', 'pick',
+            'switch', 'change', 'go to', 'move to',
+            'type', 'write', 'enter', 'press',
+            'volume', 'brightness', 'mute', 'unmute',
+            'minimize', 'maximise', 'maximize', 'minimise',
+            'scroll', 'up', 'down', 'left', 'right',
+            'create', 'make', 'delete', 'remove',
+            'take', 'screenshot', 'lock', 'shutdown', 'restart', 'sleep',
+            'what', 'tell', 'time', 'date', 'weather', 'news',
+        ]
+        
+        # First, try to find command patterns with action keywords
+        words = t.split()
+        
+        # Remove leading filler words
+        while words and words[0] in filler_words:
+            words.pop(0)
+        
+        # Remove trailing filler words
+        while words and words[-1] in filler_words:
+            words.pop()
+        
+        # Try to find where the actual command starts
+        command_start_idx = -1
+        for i, word in enumerate(words):
+            if word in action_keywords:
+                command_start_idx = i
+                break
+        
+        # If we found an action keyword, extract from there
+        if command_start_idx >= 0:
+            # Take from action keyword onwards
+            command_words = words[command_start_idx:]
+            
+            # Remove any remaining filler words that appear after action
+            cleaned_command = []
+            skip_next = False
+            for i, word in enumerate(command_words):
+                if skip_next:
+                    skip_next = False
+                    continue
+                    
+                # Check for multi-word fillers
+                if i < len(command_words) - 1:
+                    two_words = f"{word} {command_words[i+1]}"
+                    if two_words in filler_words:
+                        skip_next = True
+                        continue
+                
+                # Skip single-word fillers only if they're not part of command
+                if word in filler_words and word not in action_keywords:
+                    continue
+                    
+                cleaned_command.append(word)
+            
+            result = ' '.join(cleaned_command)
+            return result if result else t
+        
+        # If no action keyword found, just remove filler words
+        cleaned_words = [w for w in words if w not in filler_words]
+        result = ' '.join(cleaned_words)
+        return result if result else t
+    
+    def suggest_command(self, text):
+        """Suggest correct command based on common mistakes and keywords"""
+        import re
+        t = text.lower().strip()
+        
+        # Common corrections for misheard/mispronounced commands
+        corrections = {
+            # Application names often misheard
+            "python": "open python" if "open" not in t and "close" not in t else "close python",
+            "chrome": "open chrome" if "open" not in t and "close" not in t else "close chrome",
+            "notepad": "open notepad" if "open" not in t and "close" not in t else "close notepad",
+            "calculator": "open calculator" if "open" not in t and "close" not in t else "close calculator",
+            
+            # Duplicate words (speech recognition artifacts)
+            "close close": "close",
+            "open open": "open",
+            "search search": "search",
+            "select select": "select",
+        }
+        
+        # Check for exact corrections
+        for mistake, correction in corrections.items():
+            if mistake in t:
+                # Replace the mistake with correction
+                suggested = t.replace(mistake, correction)
+                return suggested
+        
+        # Check if it's a single word that might be an app name
+        words = t.split()
+        if len(words) == 1:
+            word = words[0]
+            # Common app names
+            app_keywords = ['chrome', 'firefox', 'edge', 'notepad', 'calculator', 'word', 'excel', 
+                          'powerpoint', 'outlook', 'spotify', 'discord', 'vscode', 'python', 'cmd']
+            if word in app_keywords or any(app in word for app in app_keywords):
+                return f"open {word}"
+        
+        # Check for repeated words (speech artifact)
+        if len(words) >= 2 and words[0] == words[1]:
+            return ' '.join(words[1:])  # Remove duplicate
+        
+        # Check if command has action words but malformed
+        action_words = ['open', 'close', 'launch', 'start', 'search', 'select', 'click', 'switch']
+        has_action = any(word in t for word in action_words)
+        
+        if has_action:
+            # Try to extract app name after action
+            for action in action_words:
+                if action in t:
+                    parts = t.split(action, 1)
+                    if len(parts) > 1:
+                        target = parts[1].strip()
+                        # Clean up duplicates
+                        target_words = target.split()
+                        if len(target_words) >= 2 and target_words[0] == action:
+                            target = ' '.join(target_words[1:])
+                        if target:
+                            return f"{action} {target}"
+        
+        return None  # No suggestion available
 
     def _build(self, cat, action, m, original):
+        if cat == "conversation":
+            return {"action": "conversation", "parameters": {"type": action, "original": original}, "confidence": 0.95}
         if cat == "application":
+            if action == "close_app":
+                app = m.group(1) if m.groups() else "unknown"
+                return {"action": "application", "parameters": {"app": app, "close": True}, "confidence": 0.9}
             app = m.group(1) if m.groups() else "unknown"
             return {"action": "application", "parameters": {"app": app}, "confidence": 0.9}
         if cat == "web":
             if action == "open_website":
+                # Comprehensive site mapping for social media and popular sites
                 site_map = {
-                    "youtube": "youtube.com", "facebook": "facebook.com", "twitter": "twitter.com",
-                    "instagram": "instagram.com", "linkedin": "linkedin.com", "github": "github.com",
-                    "gmail": "gmail.com", "amazon": "amazon.com", "netflix": "netflix.com", "maps": "maps.google.com"
+                    "youtube": "youtube.com",
+                    "facebook": "facebook.com",
+                    "twitter": "twitter.com",
+                    "instagram": "instagram.com",
+                    "linkedin": "linkedin.com",
+                    "whatsapp": "web.whatsapp.com",
+                    "github": "github.com",
+                    "gmail": "gmail.com",
+                    "amazon": "amazon.com",
+                    "netflix": "netflix.com",
+                    "spotify": "spotify.com",
+                    "reddit": "reddit.com",
+                    "pinterest": "pinterest.com",
+                    "tiktok": "tiktok.com",
+                    "snapchat": "snapchat.com",
+                    "telegram": "web.telegram.org",
+                    "discord": "discord.com",
+                    "slack": "slack.com",
+                    "medium": "medium.com",
+                    "quora": "quora.com",
+                    "stack overflow": "stackoverflow.com",
+                    "stackoverflow": "stackoverflow.com",
+                    "maps": "maps.google.com",
+                    "drive": "drive.google.com",
+                    "chatgpt": "chat.openai.com"
                 }
                 q = None
+                # Check for exact matches in the original command
+                original_lower = original.lower()
                 for k, v in site_map.items():
-                    if k in original:
+                    if k in original_lower:
                         q = v
                         break
                 if q is None:
                     q = m.group(1) if m.groups() else original
+                return {"action": "web", "parameters": {"query": q, "is_website": True}, "confidence": 0.95}
+            elif action == "google_search":
+                # Force Google search regardless of context
+                q = m.group(1) if m.groups() else original
+                return {"action": "web", "parameters": {"query": q, "is_website": False, "force_google": True}, "confidence": 0.95}
+            elif action == "browse_web":
+                # Browse always uses Google
+                q = m.group(1) if m.groups() else original
+                return {"action": "web", "parameters": {"query": q, "is_website": False, "force_google": True}, "confidence": 0.9}
             elif "weather" in original:
                 q = "weather forecast"
             elif "news" in original:
                 q = "latest news"
             else:
                 q = m.group(1) if m.groups() else original
-            return {"action": "web", "parameters": {"query": q}, "confidence": 0.9}
+            return {"action": "web", "parameters": {"query": q, "is_website": False}, "confidence": 0.9}
         if cat == "system":
             if "volume" in action:
                 direction = "up" if ("up" in original or "increase" in original) else "down"
                 return {"action": "system", "parameters": {"action": "volume", "direction": direction}, "confidence": 0.9}
+            if "brightness" in action:
+                direction = "up" if ("up" in original or "increase" in original or "raise" in original or "turn up" in original) else "down"
+                return {"action": "system", "parameters": {"action": "brightness", "direction": direction}, "confidence": 0.9}
             return {"action": "system", "parameters": {"action": action.replace("_", "")}, "confidence": 0.9}
         if cat == "file":
             if action == "create_folder":
@@ -1578,6 +2148,41 @@ class EnhancedCommandProcessor:
                 folder = m.group(1) if m.groups() else "desktop"
                 return {"action": "file", "parameters": {"action": "open_folder", "folder": folder}, "confidence": 0.9}
         if cat == "media":
+            if action == "navigate_result":
+                # Extract direction from group 1 for "select down/up"
+                direction = m.group(1) if m.groups() else "down"
+                return {"action": "media", "parameters": {"action": action, "direction": direction}, "confidence": 0.9}
+            elif action == "scroll_direction":
+                # Extract direction from group 2 for "down/up" (group 1 is optional prefix)
+                direction = m.group(2) if len(m.groups()) >= 2 else (m.group(1) if m.groups() else "down")
+                return {"action": "media", "parameters": {"action": action, "direction": direction}, "confidence": 0.9}
+            elif action in ("select_number", "play_number"):
+                # Extract number from text (first, second, 1st, 2nd, etc.)
+                number_text = m.group(1) if m.groups() else "first"
+                number_map = {
+                    "first": 1, "1st": 1,
+                    "second": 2, "2nd": 2,
+                    "third": 3, "3rd": 3,
+                    "fourth": 4, "4th": 4,
+                    "fifth": 5, "5th": 5,
+                    "sixth": 6, "6th": 6,
+                    "seventh": 7, "7th": 7,
+                    "eighth": 8, "8th": 8,
+                    "ninth": 9, "9th": 9,
+                    "tenth": 10, "10th": 10
+                }
+                number = number_map.get(number_text.lower(), 1)
+                return {"action": "media", "parameters": {"action": action, "number": number}, "confidence": 0.9}
+            elif action in ("select_by_text", "play_by_text"):
+                # Extract search text - get the last group which has the actual search query
+                search_text = ""
+                if m.groups():
+                    # Get the last non-empty group (the search query)
+                    for g in reversed(m.groups()):
+                        if g:
+                            search_text = g
+                            break
+                return {"action": "media", "parameters": {"action": action, "text": search_text}, "confidence": 0.9}
             return {"action": "media", "parameters": {"action": action}, "confidence": 0.9}
         if cat == "network":
             return {"action": "network", "parameters": {"action": action}, "confidence": 0.9}
@@ -1587,6 +2192,50 @@ class EnhancedCommandProcessor:
         if cat == "gesture":
             intent = "on" if "on" in action else "off" if "off" in action else "toggle"
             return {"action": "gesture", "parameters": {"state": intent}, "confidence": 0.95}
+        if cat == "window":
+            if action == "switch_to_window":
+                app_name = m.group(1) if m.groups() else "unknown"
+                return {"action": "window", "parameters": {"action": action, "app": app_name}, "confidence": 0.9}
+            return {"action": "window", "parameters": {"action": action}, "confidence": 0.9}
+        if cat == "typing":
+            if "type_text" in action:
+                text = m.group(1) if m.groups() else ""
+                return {"action": "typing", "parameters": {"action": action, "text": text}, "confidence": 0.9}
+            elif action == "press_key":
+                key = m.group(1) if m.groups() else ""
+                return {"action": "typing", "parameters": {"action": action, "text": key}, "confidence": 0.9}
+            return {"action": "typing", "parameters": {"action": action}, "confidence": 0.9}
+        if cat == "selection":
+            if action == "select_on_screen":
+                # Extract text to find and select
+                search_text = m.group(1) if m.groups() else ""
+                return {"action": "selection", "parameters": {"action": action, "text": search_text}, "confidence": 0.85}
+            
+            # Traditional selection
+            unit = "character"
+            if m.groups():
+                unit = m.group(1) if "word" in original or "line" in original or "character" in original else "character"
+            direction = "next" if "next" in action else "previous" if "previous" in action else "all"
+            return {"action": "selection", "parameters": {"action": action, "unit": unit, "direction": direction}, "confidence": 0.9}
+        if cat == "navigation":
+            # Determine arrow direction from action or original text
+            if "right" in action or "right" in original or "next" in original:
+                arrow_dir = "right"
+            elif "left" in action or "left" in original or "back" in original:
+                arrow_dir = "left"
+            elif "up" in action or "up" in original:
+                arrow_dir = "up"
+            elif "down" in action or "down" in original:
+                arrow_dir = "down"
+            else:
+                arrow_dir = "right"  # default
+            return {"action": "navigation", "parameters": {"direction": arrow_dir}, "confidence": 0.95}
+        if cat == "scroll":
+            if "extreme" in action:
+                direction = "top" if "top" in original else "bottom"
+            else:
+                direction = "up" if "up" in original else "down"
+            return {"action": "scroll", "parameters": {"direction": direction}, "confidence": 0.9}
         return {"action": "unknown", "parameters": {}, "confidence": 0.1}
 
 
@@ -1595,8 +2244,48 @@ class EnhancedSystemController:
         self.system = platform.system().lower()
 
     def open_application(self, app_name):
+        """Open application or switch to it if already running"""
         try:
             app = app_name.lower()
+            
+            # Check if application is already running on Windows
+            if self.system == "windows":
+                # Map app names to process names
+                process_map = {
+                    "chrome": "chrome.exe",
+                    "firefox": "firefox.exe",
+                    "edge": "msedge.exe",
+                    "notepad": "notepad.exe",
+                    "calculator": "calculator.exe",
+                    "word": "winword.exe",
+                    "excel": "excel.exe",
+                    "powerpoint": "powerpnt.exe",
+                    "outlook": "outlook.exe",
+                    "teams": "teams.exe",
+                    "discord": "discord.exe",
+                    "spotify": "spotify.exe",
+                    "vlc": "vlc.exe",
+                    "vscode": "code.exe",
+                    "cmd": "cmd.exe",
+                    "powershell": "powershell.exe",
+                    "paint": "mspaint.exe",
+                    "settings": "SystemSettings.exe",
+                    "edge": "msedge.exe",
+                    "whatsapp": "WhatsApp.exe"
+                }
+                
+                # Check if process is running
+                process_name = process_map.get(app)
+                if process_name:
+                    import psutil
+                    is_running = any(proc.name().lower() == process_name.lower() for proc in psutil.process_iter(['name']))
+                    
+                    if is_running:
+                        # Application is running, switch to it
+                        self.switch_to_window(app_name)
+                        return True  # Return success regardless of switch result
+            
+            # Application not running or on other OS, launch it
             if self.system == "windows":
                 cmds = {
                     "chrome": "start chrome", "firefox": "start firefox", "edge": "start msedge",
@@ -1616,7 +2305,7 @@ class EnhancedSystemController:
                 cmds = {"chrome": "google-chrome", "firefox": "firefox", "notepad": "gedit",
                         "calculator": "gnome-calculator", "explorer": "nautilus", "vscode": "code"}
             command = cmds.get(app, app)
-            subprocess.Popen(command, shell=True)
+            subprocess.Popen(str(command), shell=True)
             return True
         except Exception as e:
             print(f"Error opening application: {e}")
@@ -1628,6 +2317,9 @@ class EnhancedSystemController:
             if action == 'volume':
                 direction = parameters.get('direction', 'up')
                 return self.adjust_volume(direction)
+            elif action == 'brightness':
+                direction = parameters.get('direction', 'up')
+                return self.adjust_brightness(direction)
             elif action == 'mute':
                 return self.toggle_mute()
             elif action == 'lock':
@@ -1656,12 +2348,76 @@ class EnhancedSystemController:
             print(f"Error executing system command: {e}")
             return False
 
-    def web_search(self, query):
+    def web_search(self, parameters, context=None):
+        """Handle both website opening and context-aware searches (YouTube vs Google)"""
         try:
-            url = f"https://{query}" if query.endswith(".com") else f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            webbrowser.open(url); return True
+            if isinstance(parameters, dict):
+                query = parameters.get('query', '')
+                is_website = parameters.get('is_website', False)
+                force_google = parameters.get('force_google', False)
+            else:
+                # Backwards compatibility
+                query = parameters
+                is_website = False
+                force_google = False
+            
+            # If it's a direct website (like youtube.com)
+            if is_website or query.endswith('.com') or query.endswith('.org') or query.endswith('.net'):
+                # Remove 'www.' if present and ensure proper URL format
+                clean_query = query.replace('www.', '')
+                if not clean_query.startswith('http'):
+                    url = f"https://{clean_query}"
+                else:
+                    url = clean_query
+                    
+                # Track context for future searches
+                if 'youtube' in clean_query:
+                    self.last_opened_context = 'youtube'
+                else:
+                    self.last_opened_context = 'web'
+                    
+                webbrowser.open(url)
+                return True
+            else:
+                # Check if force Google search
+                if force_google:
+                    search_query = query.replace(' ', '+')
+                    url = f"https://www.google.com/search?q={search_query}"
+                    webbrowser.open(url)
+                    self.last_opened_context = 'google'
+                    return True
+                
+                # Context-aware search: Check if YouTube was recently opened
+                if context == 'youtube' or (hasattr(self, 'last_opened_context') and self.last_opened_context == 'youtube'):
+                    # Search within SAME YouTube tab using Ctrl+F or search box
+                    search_query = query.replace(' ', '+')
+                    
+                    # Focus on YouTube search box
+                    pyautogui.hotkey('ctrl', 'l')  # Focus address bar
+                    time.sleep(0.2)
+                    pyautogui.typewrite(f"youtube.com/results?search_query={search_query}", interval=0.01)
+                    pyautogui.press('enter')
+                    
+                    time.sleep(2.5)  # Wait for results
+                    
+                    # Auto-focus first result
+                    pyautogui.click()
+                    time.sleep(0.2)
+                    for _ in range(4):
+                        pyautogui.press('tab')
+                        time.sleep(0.05)
+                    
+                    return True
+                else:
+                    # It's a Google search
+                    search_query = query.replace(' ', '+')
+                    url = f"https://www.google.com/search?q={search_query}"
+                    self.last_opened_context = 'google'
+                    webbrowser.open(url)
+                    return True
         except Exception as e:
-            print(f"Error performing web search: {e}"); return False
+            print(f"Error performing web search: {e}")
+            return False
 
     def file_operation(self, parameters):
         try:
@@ -1676,6 +2432,72 @@ class EnhancedSystemController:
     def media_control(self, parameters):
         try:
             action = parameters.get('action')
+            
+            # OCR-based selection by number
+            if action in ('select_number', 'play_number'):
+                number = parameters.get('number', 1)
+                success = self.select_result_by_number(number)
+                if action == 'play_number' and success:
+                    time.sleep(0.5)  # Brief pause before playing
+                    pyautogui.press('enter')
+                return success
+            
+            # OCR-based selection by text
+            elif action in ('select_by_text', 'play_by_text'):
+                search_text = parameters.get('text', '')
+                if search_text:
+                    success = self.find_and_click_text(search_text)
+                    if action == 'play_by_text' and success:
+                        time.sleep(0.5)
+                        pyautogui.press('enter')
+                    return success
+                return False
+            
+            # YouTube video controls
+            if action == 'play_video':
+                # Press Enter to play selected video
+                pyautogui.press('enter')
+                return True
+            elif action == 'select_first':
+                # Tab to first result (in case not already there)
+                for _ in range(4):
+                    pyautogui.press('tab')
+                    time.sleep(0.05)
+                return True
+            elif action == 'navigate_result':
+                # Handle 'select down/up' commands - direction comes from parameters
+                direction = parameters.get('direction', 'down').lower()
+                if 'down' in direction or 'next' in direction:
+                    pyautogui.press('tab')  # Tab to next
+                elif 'up' in direction or 'previous' in direction:
+                    pyautogui.hotkey('shift', 'tab')  # Shift+Tab to previous
+                return True
+            elif action == 'scroll_direction':
+                # Handle 'down' or 'up' commands for scrolling
+                direction = parameters.get('direction', 'down').lower()
+                if 'down' in direction:
+                    pyautogui.press('tab')  # Navigate down
+                elif 'up' in direction:
+                    pyautogui.hotkey('shift', 'tab')  # Navigate up
+                return True
+            elif action == 'next_result':
+                # Navigate to next result (Tab key for YouTube)
+                pyautogui.press('tab')
+                return True
+            elif action == 'previous_result':
+                # Navigate to previous result (Shift+Tab for YouTube)
+                pyautogui.hotkey('shift', 'tab')
+                return True
+            elif action == 'scroll_media':
+                # Scroll page
+                direction = parameters.get('direction', 'down')
+                if direction == 'down':
+                    pyautogui.scroll(-3)
+                else:
+                    pyautogui.scroll(3)
+                return True
+            
+            # Regular media controls
             if self.system == 'windows':
                 if action in ('play_music', 'pause_music'):
                     subprocess.run(['powershell','-c','(New-Object -comObject WScript.Shell).SendKeys([char]179)']); return True
@@ -1687,6 +2509,206 @@ class EnhancedSystemController:
                     subprocess.run(['powershell','-c','(New-Object -comObject WScript.Shell).SendKeys([char]178)']); return True
         except Exception as e:
             print(f"Error in media control: {e}"); return False
+
+    def read_screen_with_ocr(self, region=None):
+        """
+        Capture screen and extract text using OCR
+        region: tuple (x, y, width, height) to capture specific area, None for full screen
+        Returns: list of dicts [{'text': str, 'x': int, 'y': int, 'width': int, 'height': int}]
+        """
+        if not OCR_AVAILABLE:
+            print("OCR not available. Install: pip install pytesseract")
+            return []
+        
+        try:
+            # Capture screenshot
+            if region:
+                screenshot = pyautogui.screenshot(region=region)
+            else:
+                screenshot = pyautogui.screenshot()
+            
+            # Convert to format pytesseract can use
+            screenshot_np = np.array(screenshot)
+            
+            # Get text with bounding boxes
+            data = pytesseract.image_to_data(screenshot_np, output_type=pytesseract.Output.DICT)
+            
+            # Parse results
+            results = []
+            n_boxes = len(data['text'])
+            for i in range(n_boxes):
+                text = data['text'][i].strip()
+                if text:  # Only include non-empty text
+                    results.append({
+                        'text': text,
+                        'x': data['left'][i] + (region[0] if region else 0),
+                        'y': data['top'][i] + (region[1] if region else 0),
+                        'width': data['width'][i],
+                        'height': data['height'][i],
+                        'conf': data['conf'][i]  # Confidence score
+                    })
+            
+            return results
+        except Exception as e:
+            print(f"Error reading screen with OCR: {e}")
+            return []
+
+    def find_and_click_text(self, search_text, region=None, click_center=True):
+        """
+        Find text on screen and click it
+        search_text: text to search for (case-insensitive, partial match)
+        region: optional screen region to search in
+        click_center: if True, click center of text, else click top-left
+        Returns: True if found and clicked, False otherwise
+        """
+        try:
+            results = self.read_screen_with_ocr(region)
+            search_lower = search_text.lower()
+            
+            # Find matching text
+            for item in results:
+                if search_lower in item['text'].lower():
+                    # Calculate click position
+                    if click_center:
+                        click_x = item['x'] + item['width'] // 2
+                        click_y = item['y'] + item['height'] // 2
+                    else:
+                        click_x = item['x']
+                        click_y = item['y']
+                    
+                    # Click the text
+                    pyautogui.click(click_x, click_y)
+                    print(f"✓ Clicked on: {item['text']} at ({click_x}, {click_y})")
+                    return True
+            
+            print(f"✗ Text '{search_text}' not found on screen")
+            return False
+        except Exception as e:
+            print(f"Error finding and clicking text: {e}")
+            return False
+
+    def find_and_click_fuzzy(self, search_text, region=None, click_center=True):
+        """
+        Find text on screen with fuzzy matching and click it
+        Uses similarity scoring to find best match even if not exact
+        Falls back to keyboard navigation if OCR not available
+        """
+        try:
+            # Check if OCR is available
+            if not OCR_AVAILABLE:
+                print("⚠ OCR not installed, using Tab navigation fallback")
+                # Simple fallback: try Tab navigation
+                for _ in range(5):
+                    pyautogui.press('tab')
+                    time.sleep(0.05)
+                return True
+            
+            results = self.read_screen_with_ocr(region)
+            if not results:
+                print("⚠ No text detected on screen, using Tab navigation")
+                pyautogui.press('tab')
+                return True
+            
+            search_lower = search_text.lower().strip()
+            
+            # Calculate similarity scores for all detected text
+            best_match = None
+            best_score = 0
+            
+            for item in results:
+                text_lower = item['text'].lower().strip()
+                
+                # Exact substring match gets high score
+                if search_lower in text_lower:
+                    score = 100
+                elif text_lower in search_lower:
+                    score = 90
+                else:
+                    # Calculate similarity based on common words
+                    search_words = set(search_lower.split())
+                    text_words = set(text_lower.split())
+                    if search_words and text_words:
+                        common = search_words & text_words
+                        score = (len(common) / max(len(search_words), len(text_words))) * 80
+                    else:
+                        # Character-level similarity for single words
+                        common_chars = sum(1 for c in search_lower if c in text_lower)
+                        score = (common_chars / max(len(search_lower), len(text_lower))) * 60
+                
+                # Boost score for longer matching text (more reliable)
+                if len(text_lower) > 10:
+                    score *= 1.1
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = item
+            
+            # If we found a reasonable match (score > 30%), click it
+            if best_match and best_score > 30:
+                if click_center:
+                    click_x = best_match['x'] + best_match['width'] // 2
+                    click_y = best_match['y'] + best_match['height'] // 2
+                else:
+                    click_x = best_match['x']
+                    click_y = best_match['y']
+                
+                pyautogui.click(click_x, click_y)
+                print(f"✓ Clicked on: '{best_match['text']}' (match: {best_score:.0f}%) at ({click_x}, {click_y})")
+                return True
+            
+            print(f"✗ No close match for '{search_text}' (best score: {best_score:.0f}%)")
+            # Fallback to Tab navigation
+            pyautogui.press('tab')
+            return False
+            
+        except Exception as e:
+            print(f"Error in fuzzy matching: {e}")
+            # Fallback to Tab navigation
+            pyautogui.press('tab')
+            return False
+
+    def select_result_by_number(self, number, region=None):
+        """
+        Select nth result on screen (for YouTube, Google, etc.)
+        number: 1-based index (1 = first result, 2 = second, etc.)
+        region: optional screen region to search in
+        """
+        try:
+            if not OCR_AVAILABLE:
+                # Fallback: use Tab navigation
+                print(f"OCR not available, using Tab navigation to result {number}")
+                for _ in range(number + 2):  # +2 to skip header elements
+                    pyautogui.press('tab')
+                    time.sleep(0.05)
+                return True
+            
+            # Get all text on screen
+            results = self.read_screen_with_ocr(region)
+            
+            # For YouTube/Google, results are typically vertically arranged
+            # Sort by Y position to get top-to-bottom order
+            results_sorted = sorted(results, key=lambda x: x['y'])
+            
+            # Filter for likely video titles/search results (longer text, high confidence)
+            likely_results = [r for r in results_sorted if len(r['text']) > 15 and r['conf'] > 50]
+            
+            if number <= len(likely_results):
+                target = likely_results[number - 1]
+                click_x = target['x'] + target['width'] // 2
+                click_y = target['y'] + target['height'] // 2
+                pyautogui.click(click_x, click_y)
+                print(f"✓ Selected result {number}: {target['text'][:50]}...")
+                return True
+            else:
+                print(f"✗ Result {number} not found (only {len(likely_results)} results detected)")
+                # Fallback to Tab navigation
+                for _ in range(number + 2):
+                    pyautogui.press('tab')
+                    time.sleep(0.05)
+                return True
+        except Exception as e:
+            print(f"Error selecting result by number: {e}")
+            return False
 
     def network_operation(self, parameters):
         try:
@@ -1704,13 +2726,53 @@ class EnhancedSystemController:
         except Exception as e:
             print(f"Error in utility operation: {e}"); return False
 
+    def window_operation(self, parameters):
+        """Handle window management operations"""
+        try:
+            action = parameters.get('action', '')
+            if action == 'minimize_window':
+                return self.minimize_window()
+            elif action == 'maximize_window':
+                return self.maximize_window()
+            elif action == 'close_window':
+                return self.close_window()
+            elif action == 'switch_tab':
+                return self.switch_tab('next')
+            elif action == 'previous_tab':
+                return self.switch_tab('previous')
+            elif action == 'new_tab':
+                return self.new_tab()
+            elif action == 'close_tab':
+                return self.close_tab()
+            elif action == 'next_window':
+                return self.next_window()
+            elif action == 'previous_window':
+                return self.previous_window()
+            elif action == 'switch_to_window':
+                app_name = parameters.get('app', '')
+                return self.switch_to_window(app_name)
+            return False
+        except Exception as e:
+            print(f"Error in window operation: {e}"); return False
+
     def adjust_volume(self, direction):
         try:
             if self.system == 'windows':
+                # Use pyautogui for reliable volume control
                 if direction == 'up':
-                    subprocess.run(['powershell','-c','(New-Object -comObject WScript.Shell).SendKeys([char]175)'])
+                    for _ in range(2):  # Press twice for noticeable change
+                        pyautogui.press('volumeup')
+                        time.sleep(0.05)
                 else:
-                    subprocess.run(['powershell','-c','(New-Object -comObject WScript.Shell).SendKeys([char]174)'])
+                    for _ in range(2):
+                        pyautogui.press('volumedown')
+                        time.sleep(0.05)
+            elif self.system == 'darwin':  # macOS
+                amount = '10' if direction == 'up' else '-10'
+                subprocess.run(['osascript', '-e', f'set volume output volume (output volume of (get volume settings) + {amount})'])
+            elif self.system == 'linux':
+                amount = '5%+' if direction == 'up' else '5%-'
+                subprocess.run(['amixer', '-D', 'pulse', 'sset', 'Master', amount])
             return True
         except Exception as e:
             print(f"Volume control error: {e}"); return False
@@ -1853,6 +2915,482 @@ class EnhancedSystemController:
             print(f"Calculating: {expression}"); return True
         except Exception as e:
             print(f"Calculate error: {e}"); return False
+    
+    def empty_recycle_bin(self):
+        """Empty the recycle bin"""
+        try:
+            if self.system == 'windows':
+                subprocess.run(['powershell', '-c', 
+                            'Clear-RecycleBin -Force'], check=False)
+                return True
+        except Exception as e:
+            print(f"Empty recycle bin error: {e}")
+            return False
+
+    def adjust_brightness(self, direction):
+        """Adjust screen brightness"""
+        try:
+            if self.system == 'windows':
+                # Method 1: Try WMI (most reliable for Windows)
+                try:
+                    import wmi  # type: ignore
+                    c = wmi.WMI(namespace='wmi')
+                    methods = c.WmiMonitorBrightnessMethods()[0]
+                    current = c.WmiMonitorBrightness()[0].CurrentBrightness
+                    new_brightness = current + 10 if direction == 'up' else current - 10
+                    new_brightness = max(0, min(100, new_brightness))
+                    methods.WmiSetBrightness(new_brightness, 0)
+                    print(f"Brightness set to {new_brightness}%")
+                    return True
+                except:
+                    pass
+                
+                # Method 2: Try screen-brightness-control library
+                try:
+                    import screen_brightness_control as sbc  # type: ignore
+                    current = sbc.get_brightness()[0]
+                    new_brightness = current + 10 if direction == 'up' else current - 10
+                    new_brightness = max(0, min(100, new_brightness))
+                    sbc.set_brightness(new_brightness)
+                    print(f"Brightness set to {new_brightness}%")
+                    return True
+                except:
+                    pass
+                
+                # Method 3: PowerShell (Windows 10/11)
+                try:
+                    change = "+10" if direction == 'up' else "-10"
+                    script = f'''
+                    $brightness = Get-Ciminstance -Namespace root/WMI -ClassName WmiMonitorBrightness
+                    $current = $brightness.CurrentBrightness
+                    $new = [Math]::Max(0, [Math]::Min(100, $current {change}))
+                    (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, $new)
+                    '''
+                    subprocess.run(['powershell', '-Command', script], check=True, capture_output=True)
+                    print(f"Brightness adjusted {direction}")
+                    return True
+                except Exception as e:
+                    print(f"PowerShell brightness error: {e}")
+                    
+                # Method 4: Keyboard keys (fallback)
+                try:
+                    key = 'brightnessup' if direction == 'up' else 'brightnessdown'
+                    for _ in range(3):  # Press multiple times for noticeable change
+                        pyautogui.press(key)
+                        time.sleep(0.05)
+                    return True
+                except:
+                    pass
+                    
+            else:  # macOS/Linux
+                try:
+                    key = 'brightnessup' if direction == 'up' else 'brightnessdown'
+                    pyautogui.press(key)
+                    return True
+                except:
+                    pass
+                    
+            print("Brightness control not available on this device")
+            return False
+            
+        except Exception as e:
+            print(f"Brightness control error: {e}")
+            return False
+
+    def close_application(self, app_name):
+        """Close a running application"""
+        try:
+            if self.system == 'windows':
+                # Map common app names to their process names
+                app_map = {
+                    'chrome': 'chrome.exe',
+                    'firefox': 'firefox.exe',
+                    'edge': 'msedge.exe',
+                    'notepad': 'notepad.exe',
+                    'calculator': 'CalculatorApp.exe',
+                    'spotify': 'Spotify.exe',
+                    'vscode': 'Code.exe',
+                    'word': 'WINWORD.EXE',
+                    'excel': 'EXCEL.EXE',
+                    'powerpoint': 'POWERPNT.EXE',
+                }
+                process_name = app_map.get(app_name.lower(), f'{app_name}.exe')
+                result = subprocess.run(['taskkill', '/IM', process_name, '/F'], 
+                                      check=False, capture_output=True, text=True)
+                return 'SUCCESS' in result.stdout or result.returncode == 0
+            elif self.system == 'darwin':  # macOS
+                subprocess.run(['pkill', '-f', app_name])
+                return True
+            elif self.system == 'linux':
+                subprocess.run(['pkill', app_name])
+                return True
+        except Exception as e:
+            print(f"Error closing application: {e}")
+            return False
+    
+    def minimize_window(self):
+        """Minimize the current active window"""
+        try:
+            if self.system == 'windows':
+                # Windows: Press Win+Down twice to ensure minimize
+                # First press restores if maximized, second press minimizes
+                pyautogui.hotkey('win', 'down')
+                time.sleep(0.05)
+                pyautogui.hotkey('win', 'down')
+            elif self.system == 'darwin':
+                pyautogui.hotkey('command', 'm')
+            elif self.system == 'linux':
+                pyautogui.hotkey('super', 'h')
+            return True
+        except Exception as e:
+            print(f"Error minimizing window: {e}")
+            return False
+    
+    def maximize_window(self):
+        """Maximize the current active window"""
+        try:
+            if self.system == 'windows':
+                # Windows: Win+Up maximizes window
+                pyautogui.hotkey('win', 'up')
+            elif self.system == 'darwin':
+                # macOS uses green button, simulate with keyboard
+                pyautogui.hotkey('ctrl', 'command', 'f')
+            elif self.system == 'linux':
+                pyautogui.hotkey('super', 'up')
+            return True
+        except Exception as e:
+            print(f"Error maximizing window: {e}")
+            return False
+    
+    def close_window(self):
+        """Close the current active window"""
+        try:
+            if self.system == 'windows' or self.system == 'linux':
+                pyautogui.hotkey('alt', 'f4')
+            elif self.system == 'darwin':
+                pyautogui.hotkey('command', 'w')
+            return True
+        except Exception as e:
+            print(f"Error closing window: {e}")
+            return False
+    
+    def switch_tab(self, direction='next'):
+        """Switch browser/application tabs with improved reliability"""
+        try:
+            if self.system == 'windows' or self.system == 'linux':
+                if direction == 'next':
+                    # Use Ctrl+Tab for next tab
+                    pyautogui.keyDown('ctrl')
+                    time.sleep(0.05)
+                    pyautogui.press('tab')
+                    time.sleep(0.05)
+                    pyautogui.keyUp('ctrl')
+                else:
+                    # Use Ctrl+Shift+Tab for previous tab
+                    pyautogui.keyDown('ctrl')
+                    pyautogui.keyDown('shift')
+                    time.sleep(0.05)
+                    pyautogui.press('tab')
+                    time.sleep(0.05)
+                    pyautogui.keyUp('shift')
+                    pyautogui.keyUp('ctrl')
+            elif self.system == 'darwin':
+                if direction == 'next':
+                    pyautogui.hotkey('command', 'option', 'right')
+                else:
+                    pyautogui.hotkey('command', 'option', 'left')
+            time.sleep(0.1)  # Small delay for system to process
+            return True
+        except Exception as e:
+            print(f"Error switching tab: {e}")
+            return False
+    
+    def new_tab(self):
+        """Open a new tab"""
+        try:
+            if self.system == 'windows' or self.system == 'linux':
+                pyautogui.hotkey('ctrl', 't')
+            elif self.system == 'darwin':
+                pyautogui.hotkey('command', 't')
+            return True
+        except Exception as e:
+            print(f"Error opening new tab: {e}")
+            return False
+    
+    def close_tab(self):
+        """Close the current tab"""
+        try:
+            if self.system == 'windows' or self.system == 'linux':
+                pyautogui.hotkey('ctrl', 'w')
+            elif self.system == 'darwin':
+                pyautogui.hotkey('command', 'w')
+            return True
+        except Exception as e:
+            print(f"Error closing tab: {e}")
+            return False
+    
+    def scroll_page(self, direction, amount=3):
+        """Scroll the current page/window"""
+        try:
+            if direction == 'up':
+                pyautogui.scroll(amount * 100)  # Positive = scroll up
+            elif direction == 'down':
+                pyautogui.scroll(-amount * 100)  # Negative = scroll down
+            elif direction == 'top':
+                if self.system == 'windows' or self.system == 'linux':
+                    pyautogui.hotkey('ctrl', 'home')
+                elif self.system == 'darwin':
+                    pyautogui.hotkey('command', 'up')
+            elif direction == 'bottom':
+                if self.system == 'windows' or self.system == 'linux':
+                    pyautogui.hotkey('ctrl', 'end')
+                elif self.system == 'darwin':
+                    pyautogui.hotkey('command', 'down')
+            return True
+        except Exception as e:
+            print(f"Error scrolling: {e}")
+            return False
+    
+    def next_window(self):
+        """Switch to next window using Alt+Tab"""
+        try:
+            if self.system == 'windows' or self.system == 'linux':
+                # Hold Alt, press Tab, then release Alt
+                pyautogui.keyDown('alt')
+                time.sleep(0.1)
+                pyautogui.press('tab')
+                time.sleep(0.1)
+                pyautogui.keyUp('alt')
+            elif self.system == 'darwin':
+                pyautogui.keyDown('command')
+                time.sleep(0.1)
+                pyautogui.press('tab')
+                time.sleep(0.1)
+                pyautogui.keyUp('command')
+            time.sleep(0.15)  # Allow system to process window switch
+            return True
+        except Exception as e:
+            print(f"Error switching window: {e}")
+            return False
+    
+    def previous_window(self):
+        """Switch to previous window"""
+        try:
+            if self.system == 'windows':
+                pyautogui.hotkey('alt', 'shift', 'tab')
+            elif self.system == 'darwin':
+                pyautogui.hotkey('command', 'shift', 'tab')
+            elif self.system == 'linux':
+                pyautogui.hotkey('alt', 'shift', 'tab')
+            return True
+        except Exception as e:
+            print(f"Error switching to previous window: {e}")
+            return False
+    
+    def switch_to_window(self, app_name):
+        """Switch to a specific application window"""
+        try:
+            app = app_name.lower()
+            
+            if self.system == 'windows':
+                try:
+                    import win32gui
+                    import win32con
+                    
+                    # Map common app names to window title patterns
+                    title_map = {
+                        "chrome": "Chrome",
+                        "firefox": "Firefox",
+                        "edge": "Edge",
+                        "notepad": "Notepad",
+                        "calculator": "Calculator",
+                        "word": "Word",
+                        "excel": "Excel",
+                        "powerpoint": "PowerPoint",
+                        "outlook": "Outlook",
+                        "teams": "Teams",
+                        "discord": "Discord",
+                        "spotify": "Spotify",
+                        "vlc": "VLC",
+                        "vscode": "Visual Studio Code",
+                        "code": "Visual Studio Code",
+                        "cmd": "Command Prompt",
+                        "powershell": "PowerShell",
+                        "paint": "Paint",
+                        "explorer": "File Explorer",
+                    }
+                    
+                    window_title = title_map.get(app, app.title())
+                    
+                    # Find window by title
+                    def find_window_callback(hwnd, windows):
+                        if win32gui.IsWindowVisible(hwnd):
+                            title = win32gui.GetWindowText(hwnd)
+                            if title and isinstance(title, str) and window_title.lower() in title.lower():
+                                windows.append(hwnd)
+                    
+                    windows = []
+                    win32gui.EnumWindows(find_window_callback, windows)
+                    
+                    if windows:
+                        hwnd = windows[0]
+                        # Restore if minimized
+                        if win32gui.IsIconic(hwnd):
+                            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        # Bring to foreground
+                        win32gui.SetForegroundWindow(hwnd)
+                        print(f"✓ Switched to {app_name}")
+                        return True
+                    else:
+                        print(f"✗ {app_name} window not found")
+                        return False
+                        
+                except ImportError:
+                    # Fallback if win32gui not available
+                    print(f"⚠ win32gui not available, using simple method")
+                    return False
+                    
+            elif self.system == 'darwin':
+                # macOS can switch using application name
+                app_map = {
+                    "chrome": "Google Chrome",
+                    "firefox": "Firefox",
+                    "safari": "Safari",
+                    "notepad": "TextEdit",
+                    "calculator": "Calculator",
+                    "explorer": "Finder",
+                    "spotify": "Spotify",
+                    "vscode": "Visual Studio Code",
+                }
+                mac_app = app_map.get(app, app_name.title())
+                subprocess.run(['osascript', '-e', f'tell application "{mac_app}" to activate'])
+            return True
+        except Exception as e:
+            print(f"Error switching to {app_name}: {e}")
+            return False
+    
+    def typing_operation(self, parameters):
+        """Handle typing/dictation operations"""
+        try:
+            action = parameters.get('action', '')
+            text = parameters.get('text', '')
+            
+            if action == 'type_text' or action == 'write' or action == 'enter':
+                # Type the text
+                pyautogui.write(text, interval=0.05)
+                return True
+            elif action == 'new_line':
+                pyautogui.press('enter')
+                return True
+            elif action == 'new_paragraph':
+                pyautogui.press('enter')
+                pyautogui.press('enter')
+                return True
+            elif action == 'press_enter':
+                pyautogui.press('enter')
+                return True
+            elif action == 'press_tab':
+                pyautogui.press('tab')
+                return True
+            elif action == 'press_space':
+                pyautogui.press('space')
+                return True
+            elif action == 'press_key':
+                # Handle number keys and named keys
+                key_text = parameters.get('text', '')
+                number_map = {
+                    'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+                    'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+                }
+                key = number_map.get(key_text.lower(), key_text)
+                pyautogui.press(key)
+                return True
+            elif action == 'press_back':
+                pyautogui.hotkey('alt', 'left')  # Browser back
+                return True
+            elif action == 'press_forward':
+                pyautogui.hotkey('alt', 'right')  # Browser forward
+                return True
+            elif action == 'press_escape':
+                pyautogui.press('escape')
+                return True
+            elif action == 'backspace':
+                pyautogui.press('backspace')
+                return True
+            elif action == 'delete_key':
+                pyautogui.press('delete')
+                return True
+            return False
+        except Exception as e:
+            print(f"Error in typing operation: {e}")
+            return False
+    
+    def selection_operation(self, parameters):
+        """Handle text selection operations"""
+        try:
+            action = parameters.get('action', '')
+            unit = parameters.get('unit', 'character')
+            direction = parameters.get('direction', 'next')
+            
+            if action == 'select_all':
+                if self.system == 'windows' or self.system == 'linux':
+                    pyautogui.hotkey('ctrl', 'a')
+                elif self.system == 'darwin':
+                    pyautogui.hotkey('command', 'a')
+                return True
+            
+            # Select next/previous
+            if 'next' in action or direction == 'next':
+                if unit == 'word':
+                    if self.system == 'windows' or self.system == 'linux':
+                        pyautogui.hotkey('ctrl', 'shift', 'right')
+                    elif self.system == 'darwin':
+                        pyautogui.hotkey('option', 'shift', 'right')
+                elif unit == 'line':
+                    if self.system == 'windows' or self.system == 'linux':
+                        pyautogui.hotkey('shift', 'down')
+                    elif self.system == 'darwin':
+                        pyautogui.hotkey('shift', 'down')
+                else:  # character
+                    pyautogui.hotkey('shift', 'right')
+            elif 'previous' in action or direction == 'previous':
+                if unit == 'word':
+                    if self.system == 'windows' or self.system == 'linux':
+                        pyautogui.hotkey('ctrl', 'shift', 'left')
+                    elif self.system == 'darwin':
+                        pyautogui.hotkey('option', 'shift', 'left')
+                elif unit == 'line':
+                    if self.system == 'windows' or self.system == 'linux':
+                        pyautogui.hotkey('shift', 'up')
+                    elif self.system == 'darwin':
+                        pyautogui.hotkey('shift', 'up')
+                else:  # character
+                    pyautogui.hotkey('shift', 'left')
+            
+            return True
+        except Exception as e:
+            print(f"Error in selection operation: {e}")
+            return False
+    
+    def navigation_operation(self, parameters):
+        """Handle arrow key navigation for menus/profiles/selections"""
+        try:
+            direction = parameters.get('direction', 'right')
+            
+            # Press the arrow key
+            if direction == 'right':
+                pyautogui.press('right')
+            elif direction == 'left':
+                pyautogui.press('left')
+            elif direction == 'up':
+                pyautogui.press('up')
+            elif direction == 'down':
+                pyautogui.press('down')
+            
+            return True
+        except Exception as e:
+            print(f"Error in navigation operation: {e}")
+            return False
 
 
 # =========================
